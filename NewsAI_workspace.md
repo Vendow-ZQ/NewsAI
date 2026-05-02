@@ -9,7 +9,7 @@
 - **仓库名**：`newsai`
 - **可见性**：Public（飞书赛事要求）
 - **主语言**：Python 3.11
-- **核心 Stack**：LangGraph + LangChain + lark-oapi + 豆包 1.6 (OpenAI 协议)
+- **核心 Stack**：LangGraph + LangChain + lark-oapi + 豆包 2.0 (OpenAI 协议)
 - **状态**：开发中
 
 **一句话定位**：跑在飞书多维表格上的 AI 新闻编辑部 —— 9 个虚拟员工通过 OpenAPI 协同工作。
@@ -316,7 +316,7 @@ tail -f logs/newsai.log
 |---|---|
 | lark-oapi SDK 不熟悉，可能踩坑 | Day 0.5 优先做 hello world 验证 |
 | 多维表格的复杂字段（关联记录、状态字段）API 不熟 | 先用最简单字段类型，复杂字段后期加 |
-| 火山方舟 Doubao 1.6 在 LangChain 中的兼容性 | 已确认走 OpenAI 协议可通，先用 ChatOpenAI |
+| 火山方舟 Doubao 2.0 在 LangChain 中的兼容性 | 已确认走 OpenAI 协议可通，先用 ChatOpenAI |
 | 9 个 Agent 全跑通耗时 | 并发节点（信息源 / 爆点 / 创作）异步化 |
 | Token 烧得快 | 单条 demo 限制信息源 5 条以内 |
 

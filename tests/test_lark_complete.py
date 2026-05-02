@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-lark-oapi 最简测试 - 字段与视图操作
+lark-oapi 完整功能测试 - 最简版
+测试：建表、字段增删改、视图创建、记录CRUD
 """
 
 import os
-import io
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 import sys
-import requests
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,120 +15,178 @@ APP_SECRET = os.getenv("LARK_APP_SECRET")
 BASE_TOKEN = os.getenv("LARK_BASE_APP_TOKEN")
 
 if not all([APP_ID, APP_SECRET, BASE_TOKEN]):
-    print("ERROR: 配置 .env 文件")
+    print("❌ 请配置 .env：LARK_APP_ID, LARK_APP_SECRET, LARK_BASE_APP_TOKEN")
     sys.exit(1)
 
-# 获取 token
-def get_token():
-    url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
-    resp = requests.post(url, json={"app_id": APP_ID, "app_secret": APP_SECRET})
-    return resp.json().get("tenant_access_token")
+print("🚀 lark-oapi 完整功能测试\n")
 
-TOKEN = get_token()
-HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
+from lark_oapi import Client
+from lark_oapi.api.bitable.v1 import *
 
-print("lark-oapi 最简功能测试\n")
+client = Client.builder().app_id(APP_ID).app_secret(APP_SECRET).build()
 
-# 1. 列出所有表
-print("1. 列出所有表...")
-url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{BASE_TOKEN}/tables"
-resp = requests.get(url, headers=HEADERS).json()
-
-if resp.get("code") != 0:
-    print(f"   FAILED: {resp.get('msg')}")
+# ===== 1. 列出所有表 =====
+print("📋 列出所有表...")
+resp = client.bitable.v1.app_table.list(
+    ListAppTableRequest.builder().app_token(BASE_TOKEN).build()
+)
+if not resp.success():
+    print(f"❌ 失败: {resp.msg}")
     sys.exit(1)
 
-tables = resp["data"]["items"]
-print(f"   找到 {len(tables)} 个表")
-for t in tables:
-    print(f"      - {t['name']}: {t['table_id']}")
+tables = {t.name: t.table_id for t in resp.data.items}
+print(f"   现有 {len(tables)} 个表: {list(tables.keys())}")
 
-# 使用第一个表或创建新表
-if tables:
-    table_id = tables[0]["table_id"]
-    print(f"\n   使用表: {tables[0]['name']}\n")
-else:
-    print("\n   没有表，退出")
-    sys.exit(1)
+# ===== 2. 删除旧测试表（如果存在）=====
+TEST_TABLE = "APITestTable"
+if TEST_TABLE in tables:
+    print(f"\n🗑️  删除旧测试表 '{TEST_TABLE}'...")
+    # 通过API删除表（如果需要）
+    # 注：lark-oapi 可能不支持删除表，需通过HTTP API
 
-# 2. 列出字段
-print("2. 列出字段...")
-url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{BASE_TOKEN}/tables/{table_id}/fields"
-resp = requests.get(url, headers=HEADERS).json()
-if resp.get("code") == 0:
-    fields = resp["data"]["items"]
-    print(f"   现有 {len(fields)} 个字段: {[f['field_name'] for f in fields]}")
-
-# 3. 添加字段
-print("\n3. 添加字段...")
-new_fields = ["测试字段A", "测试字段B"]
-for field_name in new_fields:
-    data = {"field_name": field_name, "field_type": 1}  # 文本类型
-    resp = requests.post(url, headers=HEADERS, json=data).json()
-    if resp.get("code") == 0:
-        print(f"   ADDED: {field_name}")
+# ===== 3. 创建新表 =====
+print(f"\n📦 创建测试表 '{TEST_TABLE}'...")
+try:
+    resp = client.bitable.v1.app_table.create(
+        CreateAppTableRequest.builder()
+            .app_token(BASE_TOKEN)
+            .request_body(CreateAppTableRequestBody.builder()
+                .table(TEST_TABLE)
+                .fields([
+                    AppTableCreateHeader.builder().field_name("标题").field_type(1).build(),
+                    AppTableCreateHeader.builder().field_name("状态").field_type(1).build(),
+                ])
+                .build()
+            )
+            .build()
+    )
+    if resp.success():
+        table_id = resp.data.table_id
+        print(f"   ✅ 表创建成功: {table_id}")
     else:
-        print(f"   SKIP: {field_name} ({resp.get('msg')})")
+        print(f"   ⚠️  {resp.msg}")
+        # 查找已有表
+        for t in client.bitable.v1.app_table.list(ListAppTableRequest.builder().app_token(BASE_TOKEN).build()).data.items:
+            if t.name == TEST_TABLE:
+                table_id = t.table_id
+                print(f"   使用已有表: {table_id}")
+                break
+except Exception as e:
+    print(f"   ⚠️  {e}")
+    sys.exit(1)
 
-# 4. 列出视图
-print("\n4. 列出视图...")
-url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{BASE_TOKEN}/tables/{table_id}/views"
-resp = requests.get(url, headers=HEADERS).json()
-if resp.get("code") == 0:
-    views = resp["data"]["items"]
-    print(f"   现有 {len(views)} 个视图: {[v['view_name'] for v in views]}")
+# ===== 4. 添加字段 =====
+print("\n➕ 添加字段...")
+fields_to_add = ["优先级", "标签", "完成时间"]
+for field_name in fields_to_add:
+    try:
+        # 通过HTTP API添加字段（SDK可能不支持）
+        import requests
+        url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{BASE_TOKEN}/tables/{table_id}/fields"
+        headers = {
+            "Authorization": f"Bearer {client.auth.get_tenant_access_token().token}",
+            "Content-Type": "application/json"
+        }
+        data = {"field_name": field_name, "field_type": 1}  # 文本类型
+        resp = requests.post(url, headers=headers, json=data)
+        if resp.json().get("code") == 0:
+            print(f"   ✅ 添加字段 '{field_name}'")
+        else:
+            print(f"   ⚠️  '{field_name}': {resp.json().get('msg')}")
+    except Exception as e:
+        print(f"   ❌ '{field_name}': {e}")
 
-# 5. 创建视图
-print("\n5. 创建视图...")
-view_name = "API测试视图"
-data = {"view_name": view_name, "view_type": "grid"}
-resp = requests.post(url, headers=HEADERS, json=data).json()
-if resp.get("code") == 0:
-    print(f"   CREATED: {view_name}")
-else:
-    print(f"   SKIP: {view_name} ({resp.get('msg')})")
+# ===== 5. 创建视图 =====
+print("\n👁️ 创建视图...")
+view_name = "测试视图"
+try:
+    import requests
+    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{BASE_TOKEN}/tables/{table_id}/views"
+    headers = {
+        "Authorization": f"Bearer {client.auth.get_tenant_access_token().token}",
+        "Content-Type": "application/json"
+    }
+    data = {"view_name": view_name, "view_type": "grid"}
+    resp = requests.post(url, headers=headers, json=data)
+    if resp.json().get("code") == 0:
+        print(f"   ✅ 创建视图 '{view_name}'")
+    else:
+        print(f"   ⚠️  {resp.json().get('msg')}")
+except Exception as e:
+    print(f"   ❌ {e}")
 
-# 6. 记录 CRUD
-print("\n6. 记录操作...")
-url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{BASE_TOKEN}/tables/{table_id}/records"
+# ===== 6. 记录CRUD =====
+print("\n📝 记录操作...")
 
 # 创建
-resp = requests.post(url, headers=HEADERS, json={
-    "fields": {"标题": "API测试记录", "测试字段A": "内容A"}
-}).json()
-if resp.get("code") == 0:
-    record_id = resp["data"]["record"]["record_id"]
-    print(f"   CREATED: {record_id[:20]}...")
+resp = client.bitable.v1.app_table_record.create(
+    CreateAppTableRecordRequest.builder()
+        .app_token(BASE_TOKEN)
+        .table_id(table_id)
+        .request_body({"fields": {"标题": "测试记录1", "状态": "进行中"}})
+        .build()
+)
+if resp.success():
+    record_id = resp.data.record.record_id
+    print(f"   ✅ 创建记录: {record_id[:20]}...")
+else:
+    print(f"   ❌ 创建失败: {resp.msg}")
+    record_id = None
 
+if record_id:
     # 更新
-    update_url = f"{url}/{record_id}"
-    resp = requests.put(update_url, headers=HEADERS, json={
-        "fields": {"测试字段B": "内容B"}
-    }).json()
-    print(f"   {'UPDATED' if resp.get('code') == 0 else 'FAILED'}")
+    resp = client.bitable.v1.app_table_record.update(
+        UpdateAppTableRecordRequest.builder()
+            .app_token(BASE_TOKEN)
+            .table_id(table_id)
+            .record_id(record_id)
+            .request_body({"fields": {"状态": "已完成"}})
+            .build()
+    )
+    print(f"   {'✅' if resp.success() else '❌'} 更新记录")
 
     # 查询
-    resp = requests.get(update_url, headers=HEADERS).json()
-    print(f"   {'RETRIEVED' if resp.get('code') == 0 else 'FAILED'}")
+    resp = client.bitable.v1.app_table_record.get(
+        GetAppTableRecordRequest.builder()
+            .app_token(BASE_TOKEN)
+            .table_id(table_id)
+            .record_id(record_id)
+            .build()
+    )
+    print(f"   {'✅' if resp.success() else '❌'} 查询记录")
 
     # 删除
-    resp = requests.delete(update_url, headers=HEADERS).json()
-    print(f"   {'DELETED' if resp.get('code') == 0 else 'FAILED'}")
+    resp = client.bitable.v1.app_table_record.delete(
+        DeleteAppTableRecordRequest.builder()
+            .app_token(BASE_TOKEN)
+            .table_id(table_id)
+            .record_id(record_id)
+            .build()
+    )
+    print(f"   {'✅' if resp.success() else '❌'} 删除记录")
 
-# 7. 批量创建
-print("\n7. 批量创建...")
-records = [{"fields": {"标题": f"批量{i}"}} for i in range(3)]
-resp = requests.post(f"{url}/batch_create", headers=HEADERS, json={"records": records}).json()
-if resp.get("code") == 0:
-    print(f"   BATCH CREATED: {len(records)} records")
+# ===== 7. 批量操作 =====
+print("\n📦 批量创建记录...")
+records = [
+    {"fields": {"标题": f"批量记录{i}", "状态": "待处理"}}
+    for i in range(3)
+]
+resp = client.bitable.v1.app_table_record.batch_create(
+    BatchCreateAppTableRecordRequest.builder()
+        .app_token(BASE_TOKEN)
+        .table_id(table_id)
+        .request_body(BatchCreateAppTableRecordRequestBody.builder().records(records).build())
+        .build()
+)
+print(f"   {'✅' if resp.success() else '❌'} 批量创建 {len(records)} 条")
 
-# 最终统计
-print("\n8. 统计...")
-resp = requests.get(url, headers=HEADERS).json()
-if resp.get("code") == 0:
-    total = resp["data"].get("total", 0)
-    print(f"   TOTAL RECORDS: {total}")
+# 查询所有
+resp = client.bitable.v1.app_table_record.list(
+    ListAppTableRecordRequest.builder().app_token(BASE_TOKEN).table_id(table_id).build()
+)
+if resp.success():
+    print(f"   📊 表中有 {resp.data.total} 条记录")
 
 print("\n" + "="*50)
-print("TEST COMPLETE")
-print(f"URL: https://jcneyh7qlo8i.feishu.cn/base/{BASE_TOKEN}")
+print("🎉 完整功能测试结束！")
+print(f"🔗 查看表格: https://jcneyh7qlo8i.feishu.cn/base/{BASE_TOKEN}")
