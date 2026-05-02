@@ -1,0 +1,20 @@
+[
+  {
+    "source": "x",
+    "title": "Google DeepMind announces Gemini 2.5 with native multimodal reasoning",
+    "url": "",
+    "summary": "Gemini 2.5 introduces native audio and video understanding with real-time reasoning capabilities."
+  },
+  {
+    "source": "x",
+    "title": "Meta releases Llama 4 - open-source model beats GPT-4o on benchmarks",
+    "url": "",
+    "summary": "Meta's latest open-source LLM achieves state-of-the-art performance across multiple benchmarks while being freely available."
+  },
+  {
+    "source": "x",
+    "title": "Anthropic raises $5B at $60B valuation for AI safety research",
+    "url": "",
+    "summary": "Anthropic secures largest AI safety funding round, plans to scale responsible AI development."
+  }
+]

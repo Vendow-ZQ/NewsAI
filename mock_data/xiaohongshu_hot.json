@@ -1,0 +1,20 @@
+[
+  {
+    "source": "xiaohongshu",
+    "title": "Claude 4 发布！我用它写了一周代码，说说真实感受",
+    "url": "",
+    "summary": "Anthropic 发布 Claude 4 系列模型，编程能力大幅提升。实测对比 GPT-4o，在复杂代码生成和 debug 场景下表现优异。"
+  },
+  {
+    "source": "xiaohongshu",
+    "title": "AI 做 PPT 已经这么强了？5 分钟出 30 页",
+    "url": "",
+    "summary": "测评了 Gamma、Beautiful.ai、Tome 三款 AI PPT 工具，从模板质量、内容理解、图表生成三个维度对比。"
+  },
+  {
+    "source": "xiaohongshu",
+    "title": "程序员被裁后，我用 AI 接了 50 单外包",
+    "url": "",
+    "summary": "分享从传统开发转型 AI 辅助开发的经验，如何用 Cursor + Claude 提升 3 倍开发效率。"
+  }
+]

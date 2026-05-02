@@ -1,0 +1,28 @@
+[project]
+name = "newsai"
+version = "0.1.0"
+description = "AI News Editorial on Feishu Base - Multi-Agent Virtual Organization"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph",
+    "langchain",
+    "langchain-openai",
+    "lark-oapi",
+    "pydantic>=2.0",
+    "python-dotenv",
+    "loguru",
+    "httpx",
+    "feedparser",
+    "praw",
+    "playwright",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
