@@ -10,7 +10,7 @@
 ## 技术栈
 
 - **编排引擎**：LangGraph (状态图)
-- **LLM**：豆包 1.6 (火山方舟 OpenAI 协议)
+- **LLM**：豆包 2.0 (火山方舟 OpenAI 协议)
 - **飞书集成**：lark-oapi SDK
 - **信息源**：arXiv / Hacker News / GitHub Trending / Reddit + mock 小红书/抖音/X
 
