@@ -1,57 +1,135 @@
 """LangGraph 节点函数 -- 包装 Agent 为图节点。"""
 
-from typing import Any
+from typing import Any, Dict
+
+from core.graph.state import NewsAIState
+from core.agents.trend_scout import TrendScoutAgent
+from core.agents.topic_curator import TopicCuratorAgent
+from core.agents.content_writer import ContentWriterAgent
+from core.agents.visual_designer import VisualDesignerAgent
+from core.agents.script_writer import ScriptWriterAgent
+from core.agents.reviewer import ReviewerAgent
+from core.agents.distributor import DistributorAgent
 
 
-async def collect_news(state: dict[str, Any]) -> dict[str, Any]:
-    """信息采集节点。"""
-    # TODO: 调用 TrendScoutAgent
-    return {"current_step": "collect_news"}
+def _make_log(agent: str, status: str, **kwargs) -> list:
+    """创建单条执行日志（用于Annotated合并）"""
+    return [{"agent": agent, "status": status, **kwargs}]
 
 
-async def analyze_hooks(state: dict[str, Any]) -> dict[str, Any]:
-    """爆点分析节点。"""
-    # TODO: 调用 HookAnalystAgent
-    return {"current_step": "analyze_hooks"}
+# 小哨节点
+def create_trend_scout_node(storage: Any, llm: Any):
+    """创建小哨节点（信息采集）。"""
+    def node(state: NewsAIState) -> Dict[str, Any]:
+        try:
+            agent = TrendScoutAgent(storage, llm)
+            result = agent.execute({"topic_id": state.current_topic_id})
+            return {"execution_log": _make_log("小哨", "完成", result=result)}
+        except Exception as e:
+            # 使用errors列表（支持Annotated合并）而非error单值
+            return {"execution_log": _make_log("小哨", "失败", error=str(e)), "errors": [str(e)]}
+    return node
 
 
-async def curate_topics(state: dict[str, Any]) -> dict[str, Any]:
-    """选题生成节点。"""
-    # TODO: 调用 TopicCuratorAgent
-    return {"current_step": "curate_topics"}
+# 小编节点
+def create_topic_curator_node(storage: Any, llm: Any):
+    """创建小编节点（选题策划）。"""
+    def node(state: NewsAIState) -> Dict[str, Any]:
+        try:
+            agent = TopicCuratorAgent(storage, llm)
+            result = agent.execute({"topic_id": state.current_topic_id})
+            return {"execution_log": _make_log("小编", "完成", result=result)}
+        except Exception as e:
+            return {"execution_log": _make_log("小编", "失败", error=str(e)), "errors": [str(e)]}
+    return node
 
 
-async def write_content(state: dict[str, Any]) -> dict[str, Any]:
-    """内容撰写节点。"""
-    # TODO: 调用 ContentWriterAgent
-    return {"current_step": "write_content"}
+# 小文节点
+def create_content_writer_node(storage: Any, llm: Any):
+    """创建小文节点（内容撰写）。"""
+    def node(state: NewsAIState) -> Dict[str, Any]:
+        try:
+            agent = ContentWriterAgent(storage, llm)
+            result = agent.execute({"topic_id": state.current_topic_id})
+            return {"execution_log": _make_log("小文", "完成", result=result)}
+        except Exception as e:
+            return {"execution_log": _make_log("小文", "失败", error=str(e)), "errors": [str(e)]}
+    return node
 
 
-async def design_visuals(state: dict[str, Any]) -> dict[str, Any]:
-    """视觉设计节点。"""
-    # TODO: 调用 VisualDesignerAgent
-    return {"current_step": "design_visuals"}
+# 小图节点
+def create_visual_designer_node(storage: Any, llm: Any):
+    """创建小图节点（视觉设计）。"""
+    def node(state: NewsAIState) -> Dict[str, Any]:
+        try:
+            agent = VisualDesignerAgent(storage, llm)
+            result = agent.execute({"topic_id": state.current_topic_id})
+            return {"execution_log": _make_log("小图", "完成", result=result)}
+        except Exception as e:
+            return {"execution_log": _make_log("小图", "失败", error=str(e)), "errors": [str(e)]}
+    return node
 
 
-async def write_script(state: dict[str, Any]) -> dict[str, Any]:
-    """短视频脚本节点。"""
-    # TODO: 调用 ScriptWriterAgent
-    return {"current_step": "write_script"}
+# 小播节点
+def create_script_writer_node(storage: Any, llm: Any):
+    """创建小播节点（视频脚本）。"""
+    def node(state: NewsAIState) -> Dict[str, Any]:
+        try:
+            agent = ScriptWriterAgent(storage, llm)
+            result = agent.execute({"topic_id": state.current_topic_id})
+            return {"execution_log": _make_log("小播", "完成", result=result)}
+        except Exception as e:
+            return {"execution_log": _make_log("小播", "失败", error=str(e)), "errors": [str(e)]}
+    return node
 
 
-async def review_content(state: dict[str, Any]) -> dict[str, Any]:
-    """审核节点。"""
-    # TODO: 调用 ReviewerAgent
-    return {"current_step": "review_content"}
+# 小审节点
+def create_reviewer_node(storage: Any, llm: Any):
+    """创建小审节点（审核）。"""
+    def node(state: NewsAIState) -> Dict[str, Any]:
+        try:
+            agent = ReviewerAgent(storage, llm)
+            result = agent.execute({"topic_id": state.current_topic_id})
+            review_results = result.get("review_results", [])
+            review_verdict = "需修改"
+            revision_count = state.revision_count
+            if review_results:
+                review_data = review_results[0].get("review_result", {})
+                review_verdict = review_data.get("审查结论", "需修改")
+                if review_verdict == "需修改":
+                    revision_count += 1
+            return {
+                "execution_log": _make_log("小审", "完成", verdict=review_verdict),
+                "review_verdict": review_verdict,
+                "revision_count": revision_count
+            }
+        except Exception as e:
+            return {"execution_log": _make_log("小审", "失败", error=str(e)), "errors": [str(e)]}
+    return node
 
 
-async def distribute(state: dict[str, Any]) -> dict[str, Any]:
-    """分发策略节点。"""
-    # TODO: 调用 DistributorAgent
-    return {"current_step": "distribute"}
+# 小改节点
+def create_editor_node(storage: Any, llm: Any):
+    """创建小改节点（修改）。"""
+    def node(state: NewsAIState) -> Dict[str, Any]:
+        try:
+            from core.agents.editor import EditorAgent
+            agent = EditorAgent(storage, llm)
+            result = agent.execute({"topic_id": state.current_topic_id})
+            return {"execution_log": _make_log("小改", "完成", result=result)}
+        except Exception as e:
+            return {"execution_log": _make_log("小改", "失败", error=str(e)), "errors": [str(e)]}
+    return node
 
 
-async def analyze_data(state: dict[str, Any]) -> dict[str, Any]:
-    """数据分析节点。"""
-    # TODO: 调用 AnalystAgent
-    return {"current_step": "analyze_data"}
+# 小发节点
+def create_distributor_node(storage: Any, llm: Any):
+    """创建小发节点（分发）。"""
+    def node(state: NewsAIState) -> Dict[str, Any]:
+        try:
+            agent = DistributorAgent(storage, llm)
+            result = agent.execute({"topic_id": state.current_topic_id})
+            return {"execution_log": _make_log("小发", "完成", result=result)}
+        except Exception as e:
+            return {"execution_log": _make_log("小发", "失败", error=str(e)), "errors": [str(e)]}
+    return node

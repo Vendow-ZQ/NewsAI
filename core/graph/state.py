@@ -1,61 +1,30 @@
 """LangGraph 共享 State 定义。"""
 
-from typing import Annotated
-
-from pydantic import BaseModel, Field
-
-
-class NewsItem(BaseModel):
-    """单条新闻信息。"""
-    source: str = ""
-    title: str = ""
-    url: str = ""
-    summary: str = ""
-    raw_content: str = ""
-    hook_score: float = 0.0
-    hook_reason: str = ""
+from dataclasses import dataclass, field
+from typing import Optional, List, Annotated
+import operator
 
 
-class TopicPlan(BaseModel):
-    """选题方案。"""
-    title: str = ""
-    angle: str = ""
-    target_platform: str = ""
-    news_items: list[str] = Field(default_factory=list)
+@dataclass
+class NewsAIState:
+    """NewsAI LangGraph 状态类。
 
+    用于在Agent节点之间传递状态信息。
+    支持并发写入execution_log和errors（通过Annotated合并）。
 
-class ContentDraft(BaseModel):
-    """内容草稿。"""
-    topic_title: str = ""
-    platform: str = ""
-    body: str = ""
-    review_status: str = "pending"
-    review_comments: str = ""
+    注意：current_topic_id不可在并行节点中修改，避免"Can receive only one value per step"错误。
+    """
+    current_topic_id: Optional[str] = None
+    current_agent: Optional[str] = None
+    revision_count: int = 0
+    max_revisions: int = 3
+    review_verdict: Optional[str] = None  # "通过" / "需修改"
 
+    # 使用Annotated支持并发节点写入错误信息
+    errors: Annotated[List[str], operator.add] = field(default_factory=list)
 
-class GraphState(BaseModel):
-    """LangGraph 全局状态。"""
-    # 采集阶段
-    raw_news: list[NewsItem] = Field(default_factory=list)
+    # execution_log 使用 Annotated + operator.add 实现并发合并
+    # 当多个节点并行返回execution_log时，LangGraph会自动合并
+    execution_log: Annotated[List[dict], operator.add] = field(default_factory=list)
 
-    # 分析阶段
-    scored_news: list[NewsItem] = Field(default_factory=list)
-
-    # 选题阶段
-    topics: list[TopicPlan] = Field(default_factory=list)
-
-    # 创作阶段
-    drafts: list[ContentDraft] = Field(default_factory=list)
-
-    # 视觉阶段
-    image_urls: list[str] = Field(default_factory=list)
-
-    # 审核阶段
-    approved_drafts: list[ContentDraft] = Field(default_factory=list)
-
-    # 分发阶段
-    distribution_plan: dict = Field(default_factory=dict)
-
-    # 元信息
-    current_step: str = ""
-    errors: list[str] = Field(default_factory=list)
+    # 注意：已移除error字段（单字符串），改用errors列表（支持并发写入）

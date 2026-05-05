@@ -496,7 +496,8 @@ class FeishuBaseManager:
             resp = self.client.bitable.v1.app_table_record.list(builder.build())
 
             if resp.success():
-                for item in resp.data.items:
+                items = resp.data.items or []
+                for item in items:
                     all_records.append({
                         "record_id": item.record_id,
                         "fields": item.fields
@@ -530,6 +531,81 @@ class FeishuBaseManager:
         )
 
         return resp.success()
+
+    # ==================== 日期时间转换工具 ====================
+
+    @staticmethod
+    def convert_datetime_to_timestamp(value) -> int:
+        """将各种日期时间格式转换为飞书Base要求的毫秒时间戳。
+
+        支持的输入格式：
+        - datetime对象
+        - ISO格式字符串（如"2026-05-04T12:00:00"）
+        - 已有的时间戳（直接返回）
+
+        Args:
+            value: 日期时间值
+
+        Returns:
+            毫秒时间戳（int）
+        """
+        from datetime import datetime
+
+        if value is None:
+            return int(datetime.now().timestamp() * 1000)
+
+        # 如果已经是数字（时间戳），直接返回
+        if isinstance(value, (int, float)):
+            return int(value)
+
+        # 如果是datetime对象
+        if isinstance(value, datetime):
+            return int(value.timestamp() * 1000)
+
+        # 如果是字符串，尝试解析
+        if isinstance(value, str):
+            try:
+                # 尝试ISO格式
+                if 'T' in value:
+                    # 处理带Z的UTC时间
+                    if value.endswith('Z'):
+                        value = value[:-1] + '+00:00'
+                    dt = datetime.fromisoformat(value)
+                    return int(dt.timestamp() * 1000)
+                # 尝试常见格式
+                for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
+                    try:
+                        dt = datetime.strptime(value, fmt)
+                        return int(dt.timestamp() * 1000)
+                    except:
+                        continue
+            except Exception as e:
+                print(f"[警告] 日期解析失败 '{value}': {e}")
+
+        # 默认返回当前时间
+        return int(datetime.now().timestamp() * 1000)
+
+    @staticmethod
+    def prepare_record_fields(fields: Dict[str, Any], datetime_fields: List[str] = None) -> Dict[str, Any]:
+        """准备记录字段，自动转换日期时间字段。
+
+        Args:
+            fields: 原始字段值字典
+            datetime_fields: 需要转换为时间戳的字段名列表
+
+        Returns:
+            转换后的字段值字典
+        """
+        if not datetime_fields:
+            return fields
+
+        result = {}
+        for key, value in fields.items():
+            if key in datetime_fields and value is not None:
+                result[key] = FeishuBaseManager.convert_datetime_to_timestamp(value)
+            else:
+                result[key] = value
+        return result
 
     def query_records(self, table_id: str, filter_conditions: Dict[str, Any]) -> List[Dict[str, Any]]:
         """

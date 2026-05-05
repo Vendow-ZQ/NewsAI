@@ -1,36 +1,76 @@
 """LangGraph 图构建工厂。"""
 
 from langgraph.graph import StateGraph, END
+from typing import Any
 
-from core.graph.state import GraphState
-from core.graph import nodes
+from core.graph.state import NewsAIState
+from core.graph.nodes import (
+    create_trend_scout_node,
+    create_topic_curator_node,
+    create_content_writer_node,
+    create_visual_designer_node,
+    create_script_writer_node,
+    create_reviewer_node,
+    create_editor_node,
+    create_distributor_node,
+)
+from core.graph.edges import should_continue_review
 
 
-def build_graph() -> StateGraph:
-    """构建并返回完整的新闻编辑流程图。"""
-    graph = StateGraph(GraphState)
+def build_newsai_graph(storage: Any, llm: Any):
+    """构建并返回完整的NewsAI新闻编辑流程图。
 
-    # 添加节点
-    graph.add_node("collect_news", nodes.collect_news)
-    graph.add_node("analyze_hooks", nodes.analyze_hooks)
-    graph.add_node("curate_topics", nodes.curate_topics)
-    graph.add_node("write_content", nodes.write_content)
-    graph.add_node("design_visuals", nodes.design_visuals)
-    graph.add_node("write_script", nodes.write_script)
-    graph.add_node("review_content", nodes.review_content)
-    graph.add_node("distribute", nodes.distribute)
-    graph.add_node("analyze_data", nodes.analyze_data)
+    流程：
+    1. 小哨（信息采集）→ 小编（选题策划）
+    2. Fan-out: 小编并发到生产组3人（小文、小图、小播）
+    3. Fan-in: 3人完成后到小审
+    4. 审改循环：小审 → 小改 → 小审（最多3轮）
+    5. 小发（分发）→ 结束
 
-    # 串联主流程
-    graph.set_entry_point("collect_news")
-    graph.add_edge("collect_news", "analyze_hooks")
-    graph.add_edge("analyze_hooks", "curate_topics")
-    graph.add_edge("curate_topics", "write_content")
-    graph.add_edge("write_content", "design_visuals")
-    graph.add_edge("design_visuals", "write_script")
-    graph.add_edge("write_script", "review_content")
-    graph.add_edge("review_content", "distribute")
-    graph.add_edge("distribute", "analyze_data")
-    graph.add_edge("analyze_data", END)
+    Args:
+        storage: 存储实例（如FeishuStorage）
+        llm: LLM客户端实例
 
-    return graph.compile()
+    Returns:
+        编译后的StateGraph实例
+    """
+    workflow = StateGraph(NewsAIState)
+
+    # 添加所有节点
+    workflow.add_node("小哨", create_trend_scout_node(storage, llm))
+    workflow.add_node("小编", create_topic_curator_node(storage, llm))
+    workflow.add_node("小文", create_content_writer_node(storage, llm))
+    workflow.add_node("小图", create_visual_designer_node(storage, llm))
+    workflow.add_node("小播", create_script_writer_node(storage, llm))
+    workflow.add_node("小审", create_reviewer_node(storage, llm))
+    workflow.add_node("小改", create_editor_node(storage, llm))
+    workflow.add_node("小发", create_distributor_node(storage, llm))
+
+    # 设置入口
+    workflow.set_entry_point("小哨")
+
+    # 顺序边：小哨 → 小编
+    workflow.add_edge("小哨", "小编")
+
+    # Fan-out: 小编并发到生产组3人
+    workflow.add_edge("小编", "小文")
+    workflow.add_edge("小编", "小图")
+    workflow.add_edge("小编", "小播")
+
+    # Fan-in: 3人完成后到小审（LangGraph自动处理等待）
+    workflow.add_edge("小文", "小审")
+    workflow.add_edge("小图", "小审")
+    workflow.add_edge("小播", "小审")
+
+    # 审改循环
+    workflow.add_conditional_edges(
+        "小审",
+        should_continue_review,
+        {"继续审改": "小改", "审改完成": "小发"}
+    )
+    workflow.add_edge("小改", "小审")
+
+    # 结束
+    workflow.add_edge("小发", END)
+
+    return workflow.compile()

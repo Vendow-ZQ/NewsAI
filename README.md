@@ -63,8 +63,14 @@ python run.py --agent topic       # 单独跑某个 Agent（调试用）
 NewsAI/
 ├── bootstrap.py          # 一键复现脚本
 ├── run.py                # 主入口
+├── run_real_flow.py      # 真实流程运行
 ├── core/                 # 核心业务层（Agent / Graph / Sources）
 ├── feishu_adapter/       # 飞书多维表格适配层
+├── scripts/              # 工具脚本
+│   ├── verification/     # 验证/检查脚本
+│   ├── doc_tests/        # 飞书文档测试
+│   ├── utils/            # 工具脚本（查找等）
+│   └── maintenance/      # 数据维护
 ├── mock_data/            # Mock 数据集
 ├── tests/                # 冒烟测试
 └── docs/                 # 架构文档

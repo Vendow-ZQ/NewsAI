@@ -1,0 +1,57 @@
+[
+  {
+    "标题": "Mamba-2: State Space Duality",
+    "原文链接": "https://arxiv.org/abs/2405.04517",
+    "原文摘要": "We propose Mamba-2, a new architecture that uses state space duality to achieve Transformer-level performance on language modeling tasks while maintaining linear time complexity. Our theoretical framework connects state space models and attention mechanisms through a unified duality perspective.",
+    "原文语言": "英文",
+    "发布时间": "2026-05-03T14:30:00Z",
+    "信源平台": "arXiv",
+    "作者": ["Tri Dao", "Albert Gu"],
+    "分类": "cs.AI",
+    "pdf链接": "https://arxiv.org/pdf/2405.04517.pdf"
+  },
+  {
+    "标题": "RAG-Fusion: Advanced Retrieval-Augmented Generation",
+    "原文链接": "https://arxiv.org/abs/2402.03367",
+    "原文摘要": "We introduce RAG-Fusion, a novel approach that improves retrieval-augmented generation systems through multi-query expansion and reciprocal rank fusion. Our method significantly outperforms standard RAG on knowledge-intensive tasks.",
+    "原文语言": "英文",
+    "发布时间": "2026-05-01T10:00:00Z",
+    "信源平台": "arXiv",
+    "作者": ["John Smith", "Jane Liu", "Mike Chen"],
+    "分类": "cs.AI",
+    "pdf链接": "https://arxiv.org/pdf/2402.03367.pdf"
+  },
+  {
+    "标题": "Scaling Laws for Reward Model Overoptimization",
+    "原文链接": "https://arxiv.org/abs/2405.11234",
+    "原文摘要": "We study the phenomenon of reward model overoptimization in RLHF training. Our findings suggest that larger reward models are more robust to overoptimization, and we propose a scaling law to predict optimal stopping points.",
+    "原文语言": "英文",
+    "发布时间": "2026-05-02T16:00:00Z",
+    "信源平台": "arXiv",
+    "作者": ["Leo Gao", "John Schulman", "Jacob Hilton"],
+    "分类": "cs.AI",
+    "pdf链接": "https://arxiv.org/pdf/2405.11234.pdf"
+  },
+  {
+    "标题": "Direct Preference Optimization: Your Language Model is Secretly a Reward Model",
+    "原文链接": "https://arxiv.org/abs/2405.09876",
+    "原文摘要": "We propose Direct Preference Optimization (DPO), a simple method for fine-tuning language models from human preferences without explicit reward modeling. DPO is stable, efficient, and achieves comparable performance to RLHF.",
+    "原文语言": "英文",
+    "发布时间": "2026-05-03T09:00:00Z",
+    "信源平台": "arXiv",
+    "作者": ["Rafael Rafailov", "Archit Sharma", "Eric Mitchell"],
+    "分类": "cs.AI",
+    "pdf链接": "https://arxiv.org/pdf/2405.09876.pdf"
+  },
+  {
+    "标题": "Mixture of Experts: A Comprehensive Survey",
+    "原文链接": "https://arxiv.org/abs/2405.06543",
+    "原文摘要": "This survey reviews the Mixture of Experts (MoE) architecture and its applications in large language models. We analyze routing strategies, load balancing, and scaling properties of modern MoE systems.",
+    "原文语言": "英文",
+    "发布时间": "2026-05-04T08:00:00Z",
+    "信源平台": "arXiv",
+    "作者": ["David Fedus", "Barret Zoph", "Noam Shazeer"],
+    "分类": "cs.AI",
+    "pdf链接": "https://arxiv.org/pdf/2405.06543.pdf"
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "标题": "Show HN: I built an open-source alternative to GPT-4o's vision",
+    "原文链接": "https://github.com/example/open-vision-model",
+    "原文摘要": "Score: 342, Comments: 89",
+    "原文语言": "英文",
+    "发布时间": "2026-05-03T18:00:00",
+    "信源平台": "HackerNews",
+    "作者": "developer123",
+    "分数": 342,
+    "评论数": 89,
+    "hn链接": "https://news.ycombinator.com/item?id=40241234"
+  },
+  {
+    "标题": "The death of the junior developer",
+    "原文链接": "https://example.com/blog/death-of-junior-dev",
+    "原文摘要": "Score: 567, Comments: 234",
+    "原文语言": "英文",
+    "发布时间": "2026-05-03T12:00:00",
+    "信源平台": "HackerNews",
+    "作者": "tech Blogger",
+    "分数": 567,
+    "评论数": 234,
+    "hn链接": "https://news.ycombinator.com/item?id=40239876"
+  },
+  {
+    "标题": "LLM prices have dropped 99% in two years",
+    "原文链接": "https://example.com/analysis/llm-prices",
+    "原文摘要": "Score: 423, Comments: 156",
+    "原文语言": "英文",
+    "发布时间": "2026-05-03T15:30:00",
+    "信源平台": "HackerNews",
+    "作者": "ml_cost_analyst",
+    "分数": 423,
+    "评论数": 156,
+    "hn链接": "https://news.ycombinator.com/item?id=40240555"
+  },
+  {
+    "标题": "Reflections on a decade of AI safety research",
+    "原文链接": "https://alignment.example.org/decade-review",
+    "原文摘要": "Score: 298, Comments: 67",
+    "原文语言": "英文",
+    "发布时间": "2026-05-04T02:00:00",
+    "信源平台": "HackerNews",
+    "作者": "safety_researcher",
+    "分数": 298,
+    "评论数": 67,
+    "hn链接": "https://news.ycombinator.com/item?id=40241567"
+  },
+  {
+    "标题": "Claude Code: Lessons from 10k real-world coding sessions",
+    "原文链接": "https://www.anthropic.com/blog/claude-code-analysis",
+    "原文摘要": "Score: 512, Comments: 178",
+    "原文语言": "英文",
+    "发布时间": "2026-05-02T20:00:00",
+    "信源平台": "HackerNews",
+    "作者": "anthropic_eng",
+    "分数": 512,
+    "评论数": 178,
+    "hn链接": "https://news.ycombinator.com/item?id=40238901"
+  }
+]

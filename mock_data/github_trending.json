@@ -1,0 +1,57 @@
+[
+  {
+    "标题": "mlabonne/llm-course",
+    "原文链接": "https://github.com/mlabonne/llm-course",
+    "原文摘要": "Open-source LLM course with 100k+ stars. Complete roadmap from fundamentals to deployment.",
+    "原文语言": "英文",
+    "发布时间": "2026-05-04T08:00:00",
+    "信源平台": "GitHub",
+    "编程语言": "python",
+    "stars": 102400,
+    "今日新增": "89"
+  },
+  {
+    "标题": "open-webui/open-webui",
+    "原文链接": "https://github.com/open-webui/open-webui",
+    "原文摘要": "User-friendly WebUI for LLMs (formerly Ollama-WebUI)",
+    "原文语言": "英文",
+    "发布时间": "2026-05-04T06:00:00",
+    "信源平台": "GitHub",
+    "编程语言": "python",
+    "stars": 78500,
+    "今日新增": "234"
+  },
+  {
+    "标题": "ggerganov/llama.cpp",
+    "原文链接": "https://github.com/ggerganov/llama.cpp",
+    "原文摘要": "Port of Facebook's LLaMA model in C/C++",
+    "原文语言": "英文",
+    "发布时间": "2026-05-04T04:00:00",
+    "信源平台": "GitHub",
+    "编程语言": "python",
+    "stars": 98300,
+    "今日新增": "156"
+  },
+  {
+    "标题": "joaomdmoura/crewAI",
+    "原文链接": "https://github.com/joaomdmoura/crewAI",
+    "原文摘要": "Framework for orchestrating role-playing, autonomous AI agents",
+    "原文语言": "英文",
+    "发布时间": "2026-05-04T02:00:00",
+    "信源平台": "GitHub",
+    "编程语言": "python",
+    "stars": 45600,
+    "今日新增": "178"
+  },
+  {
+    "标题": "promptfoo/promptfoo",
+    "原文链接": "https://github.com/promptfoo/promptfoo",
+    "原文摘要": "Test your prompts, models, and RAGs. Catch regressions and improve prompt quality",
+    "原文语言": "英文",
+    "发布时间": "2026-05-03T22:00:00",
+    "信源平台": "GitHub",
+    "编程语言": "python",
+    "stars": 23400,
+    "今日新增": "89"
+  }
+]

@@ -1,0 +1,67 @@
+[
+  {
+    "标题": "Llama 3 70B 4-bit quantization running at 30 tok/sec on M3 Max",
+    "原文链接": "https://www.reddit.com/r/LocalLLaMA/comments/1abc234/llama3_70b_m3_max_performance/",
+    "原文摘要": "Just tested Llama 3 70B with 4-bit quantization on my M3 Max (128GB). Getting consistent 30 tok/sec on interactive use. Memory usage is around 42GB, leaving plenty of room for other apps. Detailed benchmarks and power consumption data inside.",
+    "原文语言": "英文",
+    "发布时间": "2026-05-03T12:00:00",
+    "信源平台": "Reddit",
+    "作者": "mac_ai_enthusiast",
+    "分数": 456,
+    "评论数": 78,
+    "外部链接": "",
+    "subreddit": "LocalLLaMA"
+  },
+  {
+    "标题": "[R] Google DeepMind's new scaling laws for reasoning",
+    "原文链接": "https://www.reddit.com/r/MachineLearning/comments/1xyz789/google_scaling_laws_reasoning/",
+    "原文摘要": "New paper from DeepMind challenges conventional scaling laws. They find that reasoning capabilities scale differently from general intelligence. In specific reasoning domains, smaller models (7B) can outperform larger ones (70B) with targeted training.",
+    "原文语言": "英文",
+    "发布时间": "2026-05-03T16:45:00",
+    "信源平台": "Reddit",
+    "作者": "ml_researcher_2024",
+    "分数": 234,
+    "评论数": 45,
+    "外部链接": "",
+    "subreddit": "MachineLearning"
+  },
+  {
+    "标题": "Comparison of local RAG frameworks: LangChain vs LlamaIndex vs Haystack",
+    "原文链接": "https://www.reddit.com/r/LocalLLaMA/comments/2def567/rag_framework_comparison/",
+    "原文摘要": "After implementing RAG with all three major frameworks, here's my detailed comparison on ease of use, performance, and scalability.",
+    "原文语言": "英文",
+    "发布时间": "2026-05-02T14:00:00",
+    "信源平台": "Reddit",
+    "作者": "rag_implementer",
+    "分数": 312,
+    "评论数": 89,
+    "外部链接": "",
+    "subreddit": "LocalLLaMA"
+  },
+  {
+    "标题": "OpenAI's new embedding model significantly outperforms open alternatives",
+    "原文链接": "https://www.reddit.com/r/artificial/comments/3ghi890/openai_embedding_comparison/",
+    "原文摘要": "Benchmarks on MTEB show text-embedding-4-large achieving new state-of-the-art. But is the improvement worth the cost over open models?",
+    "原文语言": "英文",
+    "发布时间": "2026-05-03T10:00:00",
+    "信源平台": "Reddit",
+    "作者": "embedding_researcher",
+    "分数": 189,
+    "评论数": 34,
+    "外部链接": "",
+    "subreddit": "artificial"
+  },
+  {
+    "标题": "GPT-5 rumored for June release - what we know so far",
+    "原文链接": "https://www.reddit.com/r/ChatGPT/comments/4jkl123/gpt5_june_rumors/",
+    "原文摘要": "Compilation of all credible leaks and hints about GPT-5 from OpenAI employees, partners, and Sam Altman's recent interviews.",
+    "原文语言": "英文",
+    "发布时间": "2026-05-04T08:00:00",
+    "信源平台": "Reddit",
+    "作者": "ai_news_tracker",
+    "分数": 567,
+    "评论数": 234,
+    "外部链接": "",
+    "subreddit": "ChatGPT"
+  }
+]

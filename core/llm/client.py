@@ -14,4 +14,6 @@ def get_llm() -> ChatOpenAI:
         base_url=os.getenv("LLM_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
         model=os.getenv("LLM_MODEL", ""),
         temperature=0.7,
+        timeout=30,
+        max_retries=2,
     )

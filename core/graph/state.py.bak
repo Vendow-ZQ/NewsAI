@@ -1,0 +1,24 @@
+"""LangGraph 共享 State 定义。"""
+
+from dataclasses import dataclass, field
+from typing import Optional, List, Annotated
+import operator
+
+
+@dataclass
+class NewsAIState:
+    """NewsAI LangGraph 状态类。
+
+    用于在Agent节点之间传递状态信息。
+    支持并发写入execution_log（通过Annotated合并）。
+    """
+    current_topic_id: Optional[str] = None
+    current_agent: Optional[str] = None
+    revision_count: int = 0
+    max_revisions: int = 3
+    review_verdict: Optional[str] = None  # "通过" / "需修改"
+    error: Optional[str] = None
+
+    # execution_log 使用 Annotated + operator.add 实现并发合并
+    # 当多个节点并行返回execution_log时，LangGraph会自动合并
+    execution_log: Annotated[List[dict], operator.add] = field(default_factory=list)

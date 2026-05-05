@@ -1,19 +1,17 @@
 """LangGraph 条件边逻辑。"""
 
-from typing import Any
+from core.graph.state import NewsAIState
 
 
-def should_continue_to_creation(state: dict[str, Any]) -> str:
-    """判断是否有足够的选题进入创作阶段。"""
-    topics = state.get("topics", [])
-    if not topics:
-        return "end"
-    return "create"
+def should_continue_review(state: NewsAIState) -> str:
+    """判断是否继续审改循环。
 
+    如果审改轮次小于最大轮次且审查结论为"需修改"，则继续审改。
+    否则，审改完成。
 
-def review_decision(state: dict[str, Any]) -> str:
-    """审核通过 -> 分发，不通过 -> 重写。"""
-    drafts = state.get("drafts", [])
-    if all(d.get("review_status") == "approved" for d in drafts):
-        return "distribute"
-    return "rewrite"
+    Returns:
+        "继续审改" 或 "审改完成"
+    """
+    if state.revision_count < state.max_revisions and state.review_verdict == "需修改":
+        return "继续审改"
+    return "审改完成"

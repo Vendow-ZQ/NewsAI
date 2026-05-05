@@ -60,3 +60,9 @@ htmlcov/
 
 # Output artifacts
 output/
+
+# Project specific
+.id_mapping.json
+worklog.md
+EOF
+explain_limitation.md
