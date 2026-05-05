@@ -113,7 +113,7 @@ class ReviewerAgent(BaseAgent):
         for topic in topics:
             # 获取帖子内容和视频脚本（从Bitable文档字段）
             post_content = topic.get("帖子内容", "")
-            script_content = topic.get("视频脚本", "")
+            script_content = topic.get("视频脚本内容", "")
 
             if not post_content and not script_content:
                 print(f"[小审] 选题 {topic.get('业务ID', '')} 无内容可审查")
@@ -256,13 +256,12 @@ KOC自我审美准则：
     def _write_storage(self, context: dict, result: dict):
         """更新选题库。
 
-        将审改记录追加写入飞书文档"审改记录"，
+        将审改记录写入Bitable"审改记录"字段（累积追加），
         并根据审查结论更新状态：
         - 需修改 → 状态="审改中"，审改轮次+1
         - 通过 → 状态="待发布"
         """
         review_results = result.get("review_results", [])
-        doc_storage = get_doc_storage()
 
         for review in review_results:
             topic_id = review.get("topic_id", "")
@@ -278,16 +277,22 @@ KOC自我审美准则：
                 new_status = "审改中"
 
             try:
-                # 生成新的审改记录
-                new_audit_entry = self._format_audit_entry(review_data, current_round, topic_title)
+                # 生成新的审改记录条目
+                review_entry = self._format_review_entry(review_data, current_round)
 
-                # 追加到飞书文档
-                doc_url = doc_storage.append_to_audit_doc(new_audit_entry)
-                print(f"[小审] 审查完成：{topic_title[:30]}... 结论：{conclusion}，轮次：{current_round}")
-                print(f"[小审] 文档链接: {doc_url}")
+                # 读取现有的审改记录（如果有）
+                try:
+                    existing_record = self.storage.get_by_id("选题库", topic_id)
+                    existing_reviews = existing_record.data.get("审改记录", "") if existing_record else ""
+                except:
+                    existing_reviews = ""
 
-                # 更新选题库状态字段
+                # 追加新的审改记录
+                updated_reviews = existing_reviews + "\n\n" + review_entry if existing_reviews else review_entry
+
+                # 更新选题库字段
                 update_data = {
+                    "审改记录": updated_reviews,
                     "审改轮次": current_round,
                     "状态": new_status,
                 }
@@ -297,10 +302,11 @@ KOC自我审美准则：
                     update_data["审查通过时间"] = int(datetime.now().timestamp() * 1000)
 
                 self.storage.update("选题库", topic_id, update_data)
+                print(f"[小审] 审查完成：{topic_title[:30]}... 结论：{conclusion}，轮次：{current_round}")
             except Exception as e:
                 print(f"[小审] 更新选题库失败: {e}")
 
-    def _format_audit_entry(self, review_data: dict, round_num: int, topic_title: str = "") -> str:
+    def _format_review_entry(self, review_data: dict, round_num: int) -> str:
         """格式化审改记录条目（Markdown格式）。"""
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         conclusion = review_data.get("审查结论", "需修改")
@@ -308,9 +314,7 @@ KOC自我审美准则：
         issues = review_data.get("发现的问题", [])
         metrics = review_data.get("审查指标", {})
 
-        entry = f"""# {topic_title}
-
-## 第 {round_num} 轮审查 ({now})
+        entry = f"""## 第 {round_num} 轮审查 ({now})
 
 **审查结论**: {conclusion}
 **严重度**: {severity}
