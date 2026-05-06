@@ -36,10 +36,9 @@ class DistributorAgent(BaseAgent):
         try:
             from core.storage.interface import QueryFilter
 
-            # 读取待发布的选题
-            filters = [
-                QueryFilter(field="状态", operator="eq", value="待发布")
-            ]
+            # 读取待发布的选题（使用QueryFilter，测试显示它能工作）
+            from core.storage.interface import QueryFilter
+            filters = [QueryFilter(field="状态", operator="eq", value="待发布")]
             topics = self.storage.query("选题库", filters=filters, limit=10)
 
             # 获取KOC人设

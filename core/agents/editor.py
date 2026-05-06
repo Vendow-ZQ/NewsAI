@@ -39,11 +39,9 @@ class EditorAgent(BaseAgent):
         try:
             from core.storage.interface import QueryFilter
 
-            # 读取审改中的选题
-            filters = [
-                QueryFilter(field="状态", operator="eq", value="审改中")
-            ]
-            topics = self.storage.query("选题库", filters=filters, limit=10)
+            # 读取审改中的选题（手动过滤避免QueryFilter问题）
+            all_topics = self.storage.query("选题库", limit=100)
+            topics = [t for t in all_topics if t.data.get("状态") == "审改中"][:10]
 
             # 获取KOC人设
             koc = self._load_koc(context.get("koc_id", "KOC-001"))
@@ -246,9 +244,9 @@ KOC平台差异化策略：
         if not edit_results:
             print(f"[小改] 警告：无修改内容，强制通过防止循环")
             try:
-                from core.storage.interface import QueryFilter
-                filters = [QueryFilter(field="状态", operator="eq", value="审改中")]
-                topics = self.storage.query("选题库", filters=filters, limit=10)
+                # 手动过滤避免QueryFilter问题
+                all_topics = self.storage.query("选题库", limit=100)
+                topics = [t for t in all_topics if t.data.get("状态") == "审改中"][:10]
                 for topic in topics:
                     topic_id = topic.data.get("id", "")
                     topic_title = topic.data.get("选题标题", "")
@@ -291,7 +289,10 @@ KOC平台差异化策略：
                 edit_entry = self._format_edit_entry(topic_title, edit_summary, edit_details)
                 doc_storage.append_section(doc_id, edit_entry)
 
-                print(f"[小改] 修改完成：{topic_title[:30]}... 修改点：{len(edit_details)}处")
+                # 修改完成后，将状态改回"生产中"，以便小审重新审查
+                self.storage.update("选题库", topic_id, {"状态": "生产中"})
+
+                print(f"[小改] 修改完成：{topic_title[:30]}... 修改点：{len(edit_details)}处，状态已重置为'生产中'等待再审")
             except Exception as e:
                 print(f"[小改] 更新审改文档失败: {e}")
 

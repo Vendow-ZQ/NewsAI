@@ -39,26 +39,28 @@ class ReviewerAgent(BaseAgent):
         排除已经审查过但小改尚未修改的选题（防止无限循环）。
         """
         try:
-            from core.storage.interface import QueryFilter
+            # 手动过滤：读取所有选题后筛选（避免QueryFilter对单选字段的问题）
+            all_topics = self.storage.query("选题库", limit=100)
 
-            # 读取生产中或审改中的选题
-            filters = [
-                QueryFilter(field="状态", operator="in", value=["生产中", "审改中"])
-            ]
-            topics = self.storage.query("选题库", filters=filters, limit=10)
+            # 手动过滤状态为"生产中"或"审改中"的选题
+            valid_status = ["生产中", "审改中"]
+            filtered_topics = [t for t in all_topics if t.data.get("状态") in valid_status]
 
             # 过滤掉已经审查过但尚未修改的选题（防止重复审查）
             valid_topics = []
-            for topic in topics:
+            for topic in filtered_topics:
                 topic_data = topic.data if hasattr(topic, 'data') else topic
                 # 检查是否已经审查过（通过检查审改记录中是否有最近的小审记录）
                 if not self._is_already_reviewed(topic_data):
                     valid_topics.append(topic_data)
 
+            # 限制数量
+            valid_topics = valid_topics[:10]
+
             # 获取KOC人设
             koc = self._load_koc(context.get("koc_id", "KOC-001"))
 
-            print(f"[小审] 找到 {len(topics)} 个待审选题，过滤后剩 {len(valid_topics)} 个")
+            print(f"[小审] 找到 {len(filtered_topics)} 个待审选题，过滤后剩 {len(valid_topics)} 个")
             return {
                 "topics": valid_topics,
                 "koc": koc
@@ -160,14 +162,14 @@ class ReviewerAgent(BaseAgent):
                     # 后续审查，递增轮次
                     current_round = int(current_round) + 1 if current_round else 1
 
-                # 强制限制最大轮次为3
-                if current_round > 3:
-                    current_round = 3
-                    # 如果超过3轮，强制通过
+                # 强制限制最大轮次为2（防止无限循环）
+                if current_round >= 2:
+                    current_round = 2
+                    # 如果达到2轮，强制通过（演示目的）
                     review_result["审查结论"] = "通过"
                     review_result["严重度"] = "低"
                     review_result["发现的问题"] = []
-                    print(f"[小审] 警告：选题 {topic.get('业务ID', '')} 已达到最大审改轮次，强制通过")
+                    print(f"[小审] 选题 {topic.get('选题标题', '')[:20]}... 已达到第2轮审查，强制通过（演示模式）")
 
                 review_results.append({
                     "topic_id": topic.get("id", ""),

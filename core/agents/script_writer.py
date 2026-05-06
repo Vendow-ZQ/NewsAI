@@ -51,10 +51,10 @@ class ScriptWriterAgent(BaseAgent):
                 topic_record = self.storage.get_by_id("选题库", topic_id)
                 topics = [topic_record.data] if topic_record else []
             else:
-                # 查询所有"生产中"状态的选题
-                filters = [QueryFilter(field="状态", operator="in", value=["生产中", "审改中"])]
-                records = self.storage.query("选题库", filters=filters, limit=10)
-                topics = [r.data for r in records]
+                # 查询所有"生产中"或"审改中"状态的选题（手动过滤避免QueryFilter问题）
+                all_records = self.storage.query("选题库", limit=100)
+                valid_status = ["生产中", "审改中"]
+                topics = [r.data for r in all_records if r.data.get("状态") in valid_status][:10]
 
             return {
                 "koc": koc,

@@ -45,23 +45,26 @@ class AnalystAgent(BaseAgent):
                     return {"topics": [topic_record.data]}
                 return {"topics": []}
 
-            # 计算24小时前的时间
-            yesterday = (datetime.now() - timedelta(hours=24)).isoformat()
+            # 手动过滤：读取所有已发布选题，然后过滤发布时间超过24小时的
+            all_topics = self.storage.query("选题库", limit=100)
 
-            filters = [
-                QueryFilter(field="状态", operator="eq", value="已发布"),
-                QueryFilter(field="发布完成时间", operator="lt", value=yesterday)
-            ]
-            topics = self.storage.query("选题库", filters=filters, limit=100)
+            # 计算24小时前的时间戳
+            yesterday_ts = int((datetime.now() - timedelta(hours=24)).timestamp() * 1000)
 
-            # 过滤掉已经分析过的选题
+            # 过滤已发布且发布时间超过24小时的选题
             unanalyzed_topics = []
-            for topic in topics:
-                data_id = topic.data.get("数据回流ID", "")
-                if not data_id:
-                    unanalyzed_topics.append(topic.data)
+            for topic in all_topics:
+                data = topic.data
+                if data.get("状态") == "已发布":
+                    # 检查是否已分析过
+                    data_id = data.get("数据回流ID", "")
+                    if not data_id:
+                        # 检查发布时间是否超过24小时
+                        publish_time = data.get("发布完成时间", 0)
+                        if publish_time and int(publish_time) < yesterday_ts:
+                            unanalyzed_topics.append(data)
 
-            return {"topics": unanalyzed_topics}
+            return {"topics": unanalyzed_topics[:10]}  # 限制数量
         except Exception as e:
             print(f"[小数] 读取选题库失败: {e}")
             return {"topics": []}
