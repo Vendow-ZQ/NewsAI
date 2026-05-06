@@ -107,11 +107,11 @@ class BaseAgent(ABC):
             "id": f"LOG-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
             "AgentID": getattr(self, 'emp_id', ''),
             "Agent花名": self.name,
-            "任务类型": task_type,
+            # "任务类型": task_type,  # 暂时注释，单选字段可能导致TextFieldConvFail
             "关联业务ID": related_id,
             "输入摘要": str(context)[:200],
             "输出摘要": str(result)[:200],
-            "执行状态": "成功",
+            # "执行状态": "成功",  # 暂时注释，单选字段可能导致TextFieldConvFail
             "耗时秒数": int(elapsed_seconds),
             "Token消耗": 0,
             "错误信息": "",
@@ -119,9 +119,11 @@ class BaseAgent(ABC):
         }
         try:
             self.storage.create("Agent协作日志", log_entry)
+            print(f"[日志] {self.name}: 成功写入Agent协作日志")
         except Exception as e:
             # 日志写入失败不应影响主流程
-            print(f"[警告] 写入Agent协作日志失败: {e}")
+            print(f"[警告] {self.name}: 写入Agent协作日志失败: {e}")
+            print(f"[调试] 写入数据: {log_entry}")
 
     def _get_task_type(self) -> str:
         """获取任务类型，用于Agent协作日志。
