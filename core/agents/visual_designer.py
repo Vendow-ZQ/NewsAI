@@ -31,9 +31,9 @@ class VisualDesignerAgent(BaseAgent):
         super().__init__("小图", storage, llm_client)
 
     def _read_upstream(self, context: dict) -> dict:
-        """读取选题库中状态="生产中"的选题及帖子内容。
+        """读取选题库中状态="已选"的选题及帖子内容。
 
-        从"选题库"表中读取状态为"生产中"的选题，
+        从"选题库"表中读取状态为"已选"的选题（小编创建后的状态），
         同时读取KOC人设信息。
         """
         topic_id = context.get("topic_id")
@@ -49,8 +49,8 @@ class VisualDesignerAgent(BaseAgent):
                 topic_record = self.storage.get_by_id("选题库", topic_id)
                 topics = [topic_record.data] if topic_record else []
             else:
-                # 查询所有"生产中"状态的选题
-                filters = [QueryFilter(field="状态", operator="eq", value="生产中")]
+                # 查询所有"已选"状态的选题（小编创建后的状态）
+                filters = [QueryFilter(field="状态", operator="eq", value="已选")]
                 records = self.storage.query("选题库", filters=filters, limit=10)
                 topics = [r.data for r in records]
 

@@ -1,7 +1,7 @@
 """小播 -- 短视频编剧 Agent (ScriptWriter)。
 
 小播是NewsAI的短视频编剧，负责：
-1. 读取选题库中状态="生产中"的选题
+1. 读取选题库中状态="已选"的选题
 2. 读取帖子内容
 3. 用LLM生成视频脚本（抖音30-60秒 + B站1-3分钟）
 4. 创建飞书云文档（[脚本] {date} {title}）
@@ -33,7 +33,7 @@ class ScriptWriterAgent(BaseAgent):
         super().__init__("小播", storage, llm_client)
 
     def _read_upstream(self, context: dict) -> dict:
-        """读取选题库中状态="生产中"的选题。
+        """读取选题库中状态="已选"的选题。
 
         从"选题库"表中读取状态为"生产中"的选题，
         同时读取KOC人设信息。

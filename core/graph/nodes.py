@@ -133,3 +133,16 @@ def create_distributor_node(storage: Any, llm: Any):
         except Exception as e:
             return {"execution_log": _make_log("小发", "失败", error=str(e)), "errors": [str(e)]}
     return node
+
+
+def create_analyst_node(storage: Any, llm: Any):
+    """创建小数节点（复盘）。"""
+    def node(state: NewsAIState) -> Dict[str, Any]:
+        try:
+            from core.agents.analyst import AnalystAgent
+            agent = AnalystAgent(storage, llm)
+            result = agent.execute({"topic_id": state.current_topic_id})
+            return {"execution_log": _make_log("小数", "完成", result=result)}
+        except Exception as e:
+            return {"execution_log": _make_log("小数", "失败", error=str(e)), "errors": [str(e)]}
+    return node

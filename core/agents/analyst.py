@@ -31,10 +31,20 @@ class AnalystAgent(BaseAgent):
     def _read_upstream(self, context: dict) -> dict:
         """读取已发布选题。
 
+        如果指定了topic_id，直接读取该选题（用于全流程测试）。
+
         从"选题库"表中读取状态为"已发布"且发布时间超过24小时的选题。
         """
         try:
             from core.storage.interface import QueryFilter
+            topic_id = context.get("topic_id")
+            if topic_id:
+                # 全流程测试模式：直接读取指定选题
+                topic_record = self.storage.get_by_id("选题库", topic_id)
+                if topic_record and topic_record.data.get("状态") == "已发布":
+                    return {"topics": [topic_record.data]}
+                return {"topics": []}
+
             # 计算24小时前的时间
             yesterday = (datetime.now() - timedelta(hours=24)).isoformat()
 
