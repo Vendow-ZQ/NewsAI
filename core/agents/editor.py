@@ -18,7 +18,7 @@ from datetime import datetime
 from typing import Any
 
 from core.agents.base import BaseAgent
-from feishu_adapter.doc_storage import get_doc_storage
+from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
 
 
 class EditorAgent(BaseAgent):
@@ -80,28 +80,45 @@ class EditorAgent(BaseAgent):
         topics = upstream_data.get("topics", [])
         koc = upstream_data.get("koc", {})
 
+        # 初始化文档存储（用于读取文档内容）
+        doc_storage = FeishuDocStorage()
+
         edit_results = []
         for topic in topics:
-            # 获取帖子内容、视频脚本（从Bitable文档字段）
-            post_content = topic.get("帖子内容", "")
-            script_content = topic.get("视频脚本", "")
+            # 获取文档链接（从URL字段读取）
+            post_url = topic.get("帖子文档链接", "")
+            script_url = topic.get("视频脚本文档链接", "")
 
-            # 检查是否有审改记录
-            audit_record = topic.get("审改记录", "")
-            if not audit_record:
-                print(f"[小改] 选题 {topic.get('业务ID', '')} 无审改记录，跳过")
+            # 检查是否有审改文档
+            audit_url = topic.get("审改文档链接", "")
+            if not audit_url:
+                print(f"[小改] 选题 {topic.get('id', '')} 无审改文档，跳过")
                 continue
 
-            # 解析JSON内容
-            try:
-                posts = json.loads(post_content) if post_content else {}
-                scripts = json.loads(script_content) if script_content else {}
-            except json.JSONDecodeError:
-                posts = {"原始内容": post_content}
-                scripts = {"原始内容": script_content}
+            # 从URL读取文档内容
+            posts = {}
+            scripts = {}
+
+            if post_url:
+                try:
+                    doc_id = doc_storage.extract_doc_id_from_url(post_url)
+                    post_content = doc_storage.read_doc_content(doc_id)
+                    posts = {"文档内容": post_content[:2000]} if post_content else {}
+                except Exception as e:
+                    print(f"[小改] 读取帖子文档失败: {e}")
+                    posts = {"链接": post_url}
+
+            if script_url:
+                try:
+                    doc_id = doc_storage.extract_doc_id_from_url(script_url)
+                    script_content = doc_storage.read_doc_content(doc_id)
+                    scripts = {"文档内容": script_content[:2000]} if script_content else {}
+                except Exception as e:
+                    print(f"[小改] 读取脚本文档失败: {e}")
+                    scripts = {"链接": script_url}
 
             # 构建修改提示词（简化版，不传递完整审改记录文本）
-            prompt = self._build_edit_prompt(topic, posts, scripts, "审改记录见飞书文档", koc)
+            prompt = self._build_edit_prompt(topic, posts, scripts, "审改意见见飞书审改文档", koc)
 
             try:
                 response = self.llm.invoke(prompt)
@@ -216,20 +233,18 @@ KOC平台差异化策略：
             }
 
     def _write_storage(self, context: dict, result: dict):
-        """更新选题库。
+        """追加修改章节到审改云文档。
 
-        将修改记录追加写入飞书文档"审改记录"，
         状态保持"审改中"（等待小审再次审查）
 
         防循环保护：如果没有可修改的内容，直接标记为"待发布"防止无限循环。
         """
         edit_results = result.get("edit_results", [])
-        doc_storage = get_doc_storage()
+        doc_storage = FeishuDocStorage()
 
         # 防循环保护：如果没有修改结果，直接通过
         if not edit_results:
             print(f"[小改] 警告：无修改内容，强制通过防止循环")
-            # 读取所有"审改中"的选题并强制通过
             try:
                 from core.storage.interface import QueryFilter
                 filters = [QueryFilter(field="状态", operator="eq", value="审改中")]
@@ -238,9 +253,14 @@ KOC平台差异化策略：
                     topic_id = topic.data.get("id", "")
                     topic_title = topic.data.get("选题标题", "")
                     if topic_id:
-                        # 追加强制通过记录到审改记录文档
-                        force_pass_entry = f"\n\n# {topic_title}\n\n## 强制通过\n\n小改无修改内容，强制通过防止无限循环。\n\n---\n"
-                        doc_storage.append_to_audit_doc(force_pass_entry)
+                        # 读取已有审改文档并追加强制通过记录
+                        existing_url = topic.data.get("审改文档链接", "")
+                        if existing_url:
+                            # Handle URL field format - could be dict or string
+                            url_str = existing_url.get('link', '') if isinstance(existing_url, dict) else existing_url
+                            doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
+                            force_pass_entry = f"\n## 强制通过\n\n小改无修改内容，强制通过防止无限循环。\n\n"
+                            doc_storage.append_section(doc_id, force_pass_entry)
                         self.storage.update("选题库", topic_id, {"状态": "待发布"})
                         print(f"[小改] 强制通过：{topic_id}")
             except Exception as e:
@@ -252,23 +272,28 @@ KOC平台差异化策略：
             topic_title = edit.get("topic_title", "")
             edit_data = edit.get("edit_result", {})
 
-            # 获取修改后的内容
             edit_summary = edit_data.get("修改总结", "")
             edit_details = edit_data.get("修改说明", [])
 
             try:
-                # 生成修改记录（Markdown格式）
+                # 读取已有审改文档链接
+                existing = self.storage.get_by_id("选题库", topic_id)
+                existing_url = existing.data.get("审改文档链接", "") if existing else ""
+                if not existing_url:
+                    print(f"[小改] 警告：选题 {topic_id} 无审改文档链接，跳过")
+                    continue
+
+                # Handle URL field format - could be dict or string
+                url_str = existing_url.get('link', '') if isinstance(existing_url, dict) else existing_url
+                doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
+
+                # 生成修改记录并追加
                 edit_entry = self._format_edit_entry(topic_title, edit_summary, edit_details)
+                doc_storage.append_section(doc_id, edit_entry)
 
-                # 追加到审改记录文档
-                doc_url = doc_storage.append_to_audit_doc(edit_entry)
                 print(f"[小改] 修改完成：{topic_title[:30]}... 修改点：{len(edit_details)}处")
-                print(f"[小改] 文档链接: {doc_url}")
-
-                # 只更新状态字段（内容已写入文档）
-                self.storage.update("选题库", topic_id, {})
             except Exception as e:
-                print(f"[小改] 更新选题库失败: {e}")
+                print(f"[小改] 更新审改文档失败: {e}")
 
     def _format_edit_entry(self, topic_title: str, edit_summary: str, edit_details: list) -> str:
         """格式化修改记录条目（Markdown格式）。"""

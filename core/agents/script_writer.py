@@ -4,7 +4,8 @@
 1. 读取选题库中状态="生产中"的选题
 2. 读取帖子内容
 3. 用LLM生成视频脚本（抖音30-60秒 + B站1-3分钟）
-4. 更新选题库：视频脚本内容字段
+4. 创建飞书云文档（[脚本] {date} {title}）
+5. 将文档URL回填到选题库"视频脚本文档链接"字段
 
 生成内容：
 - 抖音版脚本（30-60秒）
@@ -19,7 +20,7 @@ from typing import Any
 
 from core.agents.base import BaseAgent
 from core.storage.interface import QueryFilter
-from feishu_adapter.doc_storage import get_doc_storage
+from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
 
 
 class ScriptWriterAgent(BaseAgent):
@@ -196,12 +197,10 @@ KOC语气：{koc_tone}
             return {"抖音版": {}, "B站版": {}}
 
     def _write_storage(self, context: dict, result: dict):
-        """将视频脚本写入飞书文档。
-
-        存储视频脚本到"视频脚本"文档字段。
-        """
+        """创建飞书云文档并回填URL。"""
         scripts = result.get("scripts", [])
-        doc_storage = get_doc_storage()
+        doc_storage = FeishuDocStorage()
+        date_str = datetime.now().strftime("%Y%m%d")
 
         for script in scripts:
             topic_id = script.get("topic_id")
@@ -209,20 +208,33 @@ KOC语气：{koc_tone}
             if not topic_id:
                 continue
 
-            # 准备脚本内容
             script_content = {
                 "抖音版": script.get("抖音版", {}),
                 "B站版": script.get("B站版", {}),
             }
 
             try:
-                # 构建文档内容（Markdown格式）
-                doc_content = self._format_script_document(topic_title, script_content)
+                existing = self.storage.get_by_id("选题库", topic_id)
+                existing_url = existing.data.get("视频脚本文档链接", "") if existing else ""
 
-                # 追加到飞书文档
-                doc_url = doc_storage.append_to_scripts_doc(doc_content)
+                if existing_url:
+                    # Handle URL field format - could be dict or string
+                    url_str = existing_url.get('link', '') if isinstance(existing_url, dict) else existing_url
+                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
+                else:
+                    doc_id = doc_storage.create_script_doc(topic_title, date_str)
+
+                doc_markdown = self._format_script_document(topic_title, script_content)
+                doc_storage.append_section(doc_id, doc_markdown)
+
+                # 设置权限（组织内可查看）
+                doc_storage.set_permissions(doc_id, share_type="tenant_readable")
+                doc_url = doc_storage.get_share_url(doc_id)
+
                 print(f"[小播] 写入视频脚本: {topic_title[:30]}...")
                 print(f"[小播] 文档链接: {doc_url}")
+
+                self.storage.update("选题库", topic_id, {"视频脚本文档链接": doc_url})
             except Exception as e:
                 print(f"[小播] 写入脚本失败: {e}")
 

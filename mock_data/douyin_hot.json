@@ -1,20 +1,102 @@
 [
   {
-    "source": "douyin",
-    "title": "Sora 正式开放！实测效果炸裂",
-    "url": "",
-    "summary": "OpenAI Sora 视频生成模型正式对外开放，支持 1080p 60 秒视频生成，实测各种场景效果。"
+    "id": "dy_001",
+    "标题": "Claude Opus 4.7 代码能力实测！87.6% 碾压 GPT-4o",
+    "内容摘要": "Anthropic最新旗舰Claude Opus 4.7发布，SWE-bench Verified 87.6%，100万Token上下文。实测写代码、Debug、重构'屎山'全程吊打对手。输入$5/百万Token，程序员集体破防了。",
+    "原文链接": "https://www.douyin.com/video/claude-opus-47-test",
+    "发布时间": "2026-05-02",
+    "阅览量": 2340000,
+    "互动量": 145000,
+    "主题标签": ["新模型发布", "AI编程", "Claude"]
   },
   {
-    "source": "douyin",
-    "title": "用 AI 做了个虚拟女友，结果她比真人还会聊天",
-    "url": "",
-    "summary": "基于大模型搭建 AI 对话角色，测试情感陪伴场景的可能性与伦理边界。"
+    "id": "dy_002",
+    "标题": "Sora 2 突然关停！OpenAI 为什么放弃视频赛道？",
+    "内容摘要": "4月26日OpenAI正式关停Sora 2消费者端，API 9月终止，迪士尼10亿合作取消。业内分析IPO前战略收缩，重心转向企业级应用和编程工具。字节Seedance、快手可灵笑纳市场。",
+    "原文链接": "https://www.douyin.com/video/sora2-shutdown-analysis",
+    "发布时间": "2026-05-03",
+    "阅览量": 4560000,
+    "互动量": 312000,
+    "主题标签": ["行业八卦", "AI视频", "OpenAI"]
   },
   {
-    "source": "douyin",
-    "title": "这个 AI 工具让设计师集体失业？",
-    "url": "",
-    "summary": "Midjourney V7 发布，支持精确的文字渲染和 UI 设计，设计行业面临新变局。"
+    "id": "dy_003",
+    "标题": "GPT-5.5 发布！这 3 个升级直接改变打工人的一天",
+    "内容摘要": "OpenAI 4月23日发布GPT-5.5，Codex桌面版自动写代码、Prism科研版读论文、企业API性能提升40%。实测1小时完成原本1天的工作量，但月费又涨了...",
+    "原文链接": "https://www.douyin.com/video/gpt-55-work-changes",
+    "发布时间": "2026-05-01",
+    "阅览量": 1890000,
+    "互动量": 98000,
+    "主题标签": ["新模型发布", "GPT-5", "效率工具"]
+  },
+  {
+    "id": "dy_004",
+    "标题": "美军花540亿美元买AI！7家巨头入局， Anthropic 却被踢出群",
+    "内容摘要": "5月1日五角大楼官宣与OpenAI、Google、NVIDIA、Microsoft、Amazon、SpaceX、Reflection AI签约。AI接入最高机密网络参与作战。Anthropic因'道德底线'被排除，网友吵翻了。",
+    "原文链接": "https://www.douyin.com/video/pentagon-54b-ai-deal",
+    "发布时间": "2026-05-01",
+    "阅览量": 5230000,
+    "互动量": 389000,
+    "主题标签": ["AI军事化", "地缘政治", "行业八卦"]
+  },
+  {
+    "id": "dy_005",
+    "标题": "欧盟AI法案今天生效！你的AI产品合规了吗？",
+    "内容摘要": "5月3日全球首部全面AI监管法落地。社会评分、实时生物识别全面禁止；医疗/司法高风险强制人类监督；GPT/Gemini等大模型要交透明度报告。违规最高罚全球营收7%。",
+    "原文链接": "https://www.douyin.com/video/eu-ai-act-effective",
+    "发布时间": "2026-05-03",
+    "阅览量": 1670000,
+    "互动量": 89000,
+    "主题标签": ["AI法规", "欧盟", "合规"]
+  },
+  {
+    "id": "dy_006",
+    "标题": "Google I/O 2026 5月19日！Gemini 要放大招了？",
+    "内容摘要": "Google I/O 定档5月19-20日，山景城+全球直播。预计发布Gemini新模型、Agentic Coding、Android AI大升级。Sergey Brin亲自督战，DeepMind加速追赶Claude。",
+    "原文链接": "https://www.douyin.com/video/google-io-2026-preview",
+    "发布时间": "2026-05-04",
+    "阅览量": 1340000,
+    "互动量": 67000,
+    "主题标签": ["行业大会", "Google", "Gemini"]
+  },
+  {
+    "id": "dy_007",
+    "标题": "Claude Mythos 比 Opus 还强？93.9% 的代码能力太恐怖",
+    "内容摘要": "Anthropic隐藏大模型Mythos Preview曝光，SWE-bench 93.9%碾压一切。只给Apple/Google/Microsoft等12家顶级机构用。5月6日Code with Claude活动可能官宣。",
+    "原文链接": "https://www.douyin.com/video/claude-mythos-leak",
+    "发布时间": "2026-05-04",
+    "阅览量": 2780000,
+    "互动量": 198000,
+    "主题标签": ["新模型发布", "Claude", "前沿技术"]
+  },
+  {
+    "id": "dy_008",
+    "标题": "AI视频四大巨头实测！Sora死后谁是新王？",
+    "内容摘要": "字节Seedance 2.0(2K+CapCut)、快手可灵3.0(4K/60fps)、Google Veo 3.1(音频领先)、Runway Gen-4.5(专业控制)。同一段 prompt 跑出来的效果差距太大了！",
+    "原文链接": "https://www.douyin.com/video/ai-video-4-giants",
+    "发布时间": "2026-05-03",
+    "阅览量": 3450000,
+    "互动量": 267000,
+    "主题标签": ["AI视频", "工具评测", "对比测试"]
+  },
+  {
+    "id": "dy_009",
+    "标题": "Gemini 3.1 Deep Research 实测：输入视频自动出报告",
+    "内容摘要": "Google Gemini 3.1 Deep Research重大升级，支持MCP连企业数据、原生图表生成、协作规划。实测上传3个PDF+2个视频，30分钟产出50页行业报告，质量媲美咨询顾问。",
+    "原文链接": "https://www.douyin.com/video/gemini-deep-research-test",
+    "发布时间": "2026-05-02",
+    "阅览量": 1120000,
+    "互动量": 56000,
+    "主题标签": ["AI工具", "Gemini", "效率提升"]
+  },
+  {
+    "id": "dy_010",
+    "标题": "AI抢了VFX饭碗？初级岗位减少40%，但新职业来了",
+    "内容摘要": "数字复制品权利法案生效，AI视频必须加水印。初级VFX合成岗位全球减少40%，但'AI摄影师'年薪50万+，既要懂传统摄影灯光又要会写prompt。转型机会在哪？",
+    "原文链接": "https://www.douyin.com/video/ai-vfx-jobs-impact",
+    "发布时间": "2026-05-02",
+    "阅览量": 1980000,
+    "互动量": 134000,
+    "主题标签": ["就业影响", "AI视频", "职业规划"]
   }
 ]

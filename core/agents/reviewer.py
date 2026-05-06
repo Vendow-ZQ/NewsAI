@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Any
 
 from core.agents.base import BaseAgent
-from feishu_adapter.doc_storage import get_doc_storage
+from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
 
 
 class ReviewerAgent(BaseAgent):
@@ -109,23 +109,40 @@ class ReviewerAgent(BaseAgent):
         topics = upstream_data.get("topics", [])
         koc = upstream_data.get("koc", {})
 
+        # 初始化文档存储（用于读取文档内容）
+        doc_storage = FeishuDocStorage()
+
         review_results = []
         for topic in topics:
-            # 获取帖子内容和视频脚本（从Bitable文档字段）
-            post_content = topic.get("帖子内容", "")
-            script_content = topic.get("视频脚本内容", "")
+            # 获取文档链接（从URL字段读取）
+            post_url = topic.get("帖子文档链接", "")
+            script_url = topic.get("视频脚本文档链接", "")
 
-            if not post_content and not script_content:
-                print(f"[小审] 选题 {topic.get('业务ID', '')} 无内容可审查")
+            # 从URL读取文档内容
+            posts = {}
+            scripts = {}
+
+            if post_url:
+                try:
+                    doc_id = doc_storage.extract_doc_id_from_url(post_url)
+                    post_content = doc_storage.read_doc_content(doc_id)
+                    posts = {"文档内容": post_content[:2000]} if post_content else {}
+                except Exception as e:
+                    print(f"[小审] 读取帖子文档失败: {e}")
+                    posts = {"链接": post_url}
+
+            if script_url:
+                try:
+                    doc_id = doc_storage.extract_doc_id_from_url(script_url)
+                    script_content = doc_storage.read_doc_content(doc_id)
+                    scripts = {"文档内容": script_content[:2000]} if script_content else {}
+                except Exception as e:
+                    print(f"[小审] 读取脚本文档失败: {e}")
+                    scripts = {"链接": script_url}
+
+            if not posts and not scripts:
+                print(f"[小审] 选题 {topic.get('id', '')} 无内容可审查")
                 continue
-
-            # 解析JSON内容
-            try:
-                posts = json.loads(post_content) if post_content else {}
-                scripts = json.loads(script_content) if script_content else {}
-            except json.JSONDecodeError:
-                posts = {"原始内容": post_content}
-                scripts = {"原始内容": script_content}
 
             # 构建审查提示词
             prompt = self._build_review_prompt(topic, posts, scripts, koc)
@@ -254,22 +271,24 @@ KOC自我审美准则：
             }
 
     def _write_storage(self, context: dict, result: dict):
-        """更新选题库。
+        """创建/追加审改云文档并回填URL。
 
-        将审改记录写入Bitable"审改记录"字段（累积追加），
-        并根据审查结论更新状态：
-        - 需修改 → 状态="审改中"，审改轮次+1
-        - 通过 → 状态="待发布"
+        第1轮审查时创建新文档（含v0原稿复制），
+        后续轮次追加审查章节到已有文档。
+        根据审查结论更新状态。
         """
         review_results = result.get("review_results", [])
+        doc_storage = FeishuDocStorage()
+        date_str = datetime.now().strftime("%Y%m%d")
 
         for review in review_results:
             topic_id = review.get("topic_id", "")
             topic_title = review.get("topic_title", "")
             review_data = review.get("review_result", {})
             current_round = review.get("current_round", 1)
+            posts = review.get("posts", {})
+            scripts = review.get("scripts", {})
 
-            # 确定新状态
             conclusion = review_data.get("审查结论", "需修改")
             if conclusion == "通过":
                 new_status = "待发布"
@@ -277,34 +296,52 @@ KOC自我审美准则：
                 new_status = "审改中"
 
             try:
-                # 生成新的审改记录条目
-                review_entry = self._format_review_entry(review_data, current_round)
+                existing = self.storage.get_by_id("选题库", topic_id)
+                existing_url = existing.data.get("审改文档链接", "") if existing else ""
 
-                # 读取现有的审改记录（如果有）
-                try:
-                    existing_record = self.storage.get_by_id("选题库", topic_id)
-                    existing_reviews = existing_record.data.get("审改记录", "") if existing_record else ""
-                except:
-                    existing_reviews = ""
+                if existing_url:
+                    # 已有审改文档，追加章节
+                    # Handle URL field format - could be dict or string
+                    url_str = existing_url.get('link', '') if isinstance(existing_url, dict) else existing_url
+                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
+                else:
+                    # 第1轮：创建新文档，先写入v0原稿
+                    doc_id = doc_storage.create_audit_doc(topic_title, date_str)
+                    v0_section = self._format_v0_original(posts, scripts)
+                    doc_storage.append_section(doc_id, v0_section)
 
-                # 追加新的审改记录
-                updated_reviews = existing_reviews + "\n\n" + review_entry if existing_reviews else review_entry
+                # 写入本轮审查章节
+                review_section = self._format_review_entry(review_data, current_round)
+                doc_storage.append_section(doc_id, review_section)
 
-                # 更新选题库字段
+                # 设置权限（组织内可查看）
+                doc_storage.set_permissions(doc_id, share_type="tenant_readable")
+                doc_url = doc_storage.get_share_url(doc_id)
+
                 update_data = {
-                    "审改记录": updated_reviews,
+                    "审改文档链接": doc_url,
                     "审改轮次": current_round,
                     "状态": new_status,
                 }
-
-                # 如果通过，记录审查通过时间
                 if conclusion == "通过":
                     update_data["审查通过时间"] = int(datetime.now().timestamp() * 1000)
+                    # 追加终稿章节
+                    final_section = f"\n## 终稿\n\n已通过第 {current_round} 轮审查。\n\n"
+                    doc_storage.append_section(doc_id, final_section)
 
                 self.storage.update("选题库", topic_id, update_data)
                 print(f"[小审] 审查完成：{topic_title[:30]}... 结论：{conclusion}，轮次：{current_round}")
             except Exception as e:
                 print(f"[小审] 更新选题库失败: {e}")
+
+    def _format_v0_original(self, posts: dict, scripts: dict) -> str:
+        """格式化v0原稿章节。"""
+        section = "## v0 原稿\n\n"
+        section += "### 帖子原稿\n\n"
+        section += f"```json\n{json.dumps(posts, ensure_ascii=False, indent=2)}\n```\n\n"
+        section += "### 视频脚本原稿\n\n"
+        section += f"```json\n{json.dumps(scripts, ensure_ascii=False, indent=2)}\n```\n\n"
+        return section
 
     def _format_review_entry(self, review_data: dict, round_num: int) -> str:
         """格式化审改记录条目（Markdown格式）。"""

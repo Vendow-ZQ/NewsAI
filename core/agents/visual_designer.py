@@ -108,10 +108,9 @@ class VisualDesignerAgent(BaseAgent):
         koc_style = koc.get("视觉风格", "简洁科技风，蓝白配色")
 
         topic_title = topic.get("选题标题", "")
-        wechat_content = topic.get("公众号正文", "")
-        xhs_content = topic.get("小红书正文", "")
         topic_angle = topic.get("选题角度", "")
-        key_points = topic.get("关键信息点", "")
+        key_points = topic.get("预估爆点", "")
+        post_doc_url = topic.get("帖子文档链接", "")
 
         return f"""你是【小图 VisualDesigner】，为 KOC【{koc_name}】工作。
 
@@ -121,9 +120,9 @@ KOC视觉风格偏好：{koc_style}
 
 选题：{topic_title}
 选题角度：{topic_angle}
-关键信息点：{key_points}
-公众号正文：{wechat_content[:2000] if wechat_content else "（待生成）"}
-小红书正文：{xhs_content[:1000] if xhs_content else "（待生成）"}
+预估爆点：{key_points}
+帖子文档链接：{post_doc_url if post_doc_url else "（待生成）"}
+（内容已写入飞书云文档，根据选题角度和预估爆点设计配图即可）
 
 请返回JSON格式：
 {{

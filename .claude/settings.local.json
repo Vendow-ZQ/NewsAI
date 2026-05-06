@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(python -c \"import lark_oapi; print\\(dir\\(lark_oapi\\)\\)\")",
+      "Bash(python *)",
+      "Bash(pip install *)"
+    ]
+  }
+}

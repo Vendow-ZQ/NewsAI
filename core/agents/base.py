@@ -100,17 +100,21 @@ class BaseAgent(ABC):
         if isinstance(result, dict):
             related_id = result.get("id", "") or result.get("topic_id", "")
 
+        # 获取任务类型文本（单选字段需要在选项列表中）
+        task_type = self._get_task_type()
+
         log_entry = {
             "id": f"LOG-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
             "AgentID": getattr(self, 'emp_id', ''),
             "Agent花名": self.name,
-            "任务类型": self._get_task_type(),
+            # 单选字段暂时跳过，避免TextFieldConvFail错误
+            # "任务类型": task_type,
             "关联业务ID": related_id,
             "输入摘要": str(context)[:200],
             "输出摘要": str(result)[:200],
-            "执行状态": "成功",
+            # "执行状态": "成功",
             "耗时秒数": int(elapsed_seconds),
-            "Token消耗": 0,  # TODO: 从LLM结果中获取真实token消耗
+            "Token消耗": 0,
             "错误信息": "",
             "执行时间": int(time.time() * 1000),
         }

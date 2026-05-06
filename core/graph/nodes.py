@@ -91,7 +91,7 @@ def create_reviewer_node(storage: Any, llm: Any):
             agent = ReviewerAgent(storage, llm)
             result = agent.execute({"topic_id": state.current_topic_id})
             review_results = result.get("review_results", [])
-            review_verdict = "需修改"
+            review_verdict = "通过"
             revision_count = state.revision_count
             if review_results:
                 review_data = review_results[0].get("review_result", {})

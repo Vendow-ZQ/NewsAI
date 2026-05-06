@@ -48,6 +48,8 @@ class FeishuStorage(Storage):
 
         # 表名 -> table_id 缓存
         self._table_cache: Dict[str, str] = {}
+        # 字段类型缓存 {table_id: {field_name: field_type}}
+        self._field_type_cache: Dict[str, Dict[str, int]] = {}
 
     def _get_table_id(self, table: str) -> str:
         """
@@ -111,6 +113,9 @@ class FeishuStorage(Storage):
         if "更新时间" in [f.get("name") for f in self._get_table_fields(table_id)]:
             fields["更新时间"] = now_ms
 
+        # 转换特殊字段格式（URL字段等）
+        fields = self._prepare_fields_for_feishu(table_id, fields)
+
         try:
             # 创建记录
             feishu_record_id = self.base.create_record(table_id, fields)
@@ -150,6 +155,9 @@ class FeishuStorage(Storage):
         fields = dict(data)
         if "更新时间" in [f.get("name") for f in self._get_table_fields(table_id)]:
             fields["更新时间"] = FeishuBaseManager.convert_datetime_to_timestamp(datetime.now())
+
+        # 转换特殊字段格式（URL字段等）
+        fields = self._prepare_fields_for_feishu(table_id, fields)
 
         try:
             return self.base.update_record(table_id, feishu_record_id, fields)
@@ -344,6 +352,59 @@ class FeishuStorage(Storage):
             return [{"name": name, "field_id": fid} for name, fid in fields.items()]
         except:
             return []
+
+    def _get_field_types(self, table_id: str) -> Dict[str, int]:
+        """获取表的字段类型映射 {field_name: field_type}
+
+        Field type 15 = URL field, requires {"text": "...", "link": "..."} format
+        """
+        if table_id in self._field_type_cache:
+            return self._field_type_cache[table_id]
+
+        try:
+            # Use HTTP API to get full field metadata including types
+            fields_data = self.base._http_request(
+                "GET",
+                f"/tables/{table_id}/fields"
+            )
+            if fields_data.get("code") == 0:
+                items = fields_data.get("data", {}).get("items", [])
+                type_map = {}
+                for item in items:
+                    field_name = item.get("field_name")
+                    field_type = item.get("type")
+                    if field_name and field_type is not None:
+                        type_map[field_name] = field_type
+                self._field_type_cache[table_id] = type_map
+                return type_map
+        except Exception as e:
+            print(f"[警告] 获取字段类型失败: {e}")
+
+        return {}
+
+    def _prepare_fields_for_feishu(self, table_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """准备字段数据，处理特殊字段类型（如URL字段）
+
+        URL字段(type=15)需要 {"text": "...", "link": "..."} 格式
+        """
+        field_types = self._get_field_types(table_id)
+        if not field_types:
+            return data
+
+        result = {}
+        for field_name, value in data.items():
+            field_type = field_types.get(field_name)
+            # URL field (type=15) needs special format
+            if field_type == 15 and isinstance(value, str):
+                # Convert plain string URL to Feishu URL format
+                result[field_name] = {
+                    "text": value,
+                    "link": value
+                }
+            else:
+                result[field_name] = value
+
+        return result
 
     def bootstrap_table(self, table_name: str, fields: List[Dict[str, Any]]) -> str:
         """

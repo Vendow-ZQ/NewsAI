@@ -1,20 +1,102 @@
 [
   {
-    "source": "x",
-    "title": "Google DeepMind announces Gemini 2.5 with native multimodal reasoning",
-    "url": "",
-    "summary": "Gemini 2.5 introduces native audio and video understanding with real-time reasoning capabilities."
+    "id": "x_001",
+    "标题": "Claude Opus 4.7 Released: 87.6% SWE-bench, 1M Context Window",
+    "内容摘要": "Anthropic drops Claude Opus 4.7 on April 16. SWE-bench Verified 87.6%, 1M token context, enhanced vision. $5/$25 per million tokens. Available on Claude.ai, Bedrock, Vertex AI, Foundry.",
+    "原文链接": "https://x.com/AnthropicAI/status/claude-opus-47",
+    "发布时间": "2026-05-02",
+    "阅览量": 890000,
+    "互动量": 78000,
+    "主题标签": ["New Model", "Claude", "Coding AI"]
   },
   {
-    "source": "x",
-    "title": "Meta releases Llama 4 - open-source model beats GPT-4o on benchmarks",
-    "url": "",
-    "summary": "Meta's latest open-source LLM achieves state-of-the-art performance across multiple benchmarks while being freely available."
+    "id": "x_002",
+    "标题": "OpenAI Shuts Down Sora 2 Consumer App, API Ends Sept 24",
+    "内容摘要": "OpenAI officially shut down Sora 2 consumer app on April 26. Disney $1B IP deal cancelled. API deprecated with Sept 24 sunset. Strategic pivot to enterprise/coding ahead of IPO.",
+    "原文链接": "https://x.com/OpenAI/status/sora2-shutdown",
+    "发布时间": "2026-05-03",
+    "阅览量": 2100000,
+    "互动量": 156000,
+    "主题标签": ["OpenAI", "Sora", "AI Video"]
   },
   {
-    "source": "x",
-    "title": "Anthropic raises $5B at $60B valuation for AI safety research",
-    "url": "",
-    "summary": "Anthropic secures largest AI safety funding round, plans to scale responsible AI development."
+    "id": "x_003",
+    "标题": "Pentagon Signs $54B AI Contract with OpenAI, Google, NVIDIA",
+    "内容摘要": "May 1: US DoD contracts 7 tech giants for classified AI deployment. Models access IL-6/IL-7 networks for targeting and battle planning. Anthropic excluded over safety objections.",
+    "原文链接": "https://x.com/DeptofDefense/status/54b-ai-contract",
+    "发布时间": "2026-05-01",
+    "阅览量": 3400000,
+    "互动量": 289000,
+    "主题标签": ["AI Military", "Policy", "Geopolitics"]
+  },
+  {
+    "id": "x_004",
+    "标题": "EU AI Act Effective May 3: First Comprehensive AI Regulation",
+    "内容摘要": "World's first comprehensive AI regulation now in force. Unacceptable risk banned, high-risk sectors require human oversight, GPAI models need transparency reports. Fines up to 7% global turnover.",
+    "原文链接": "https://x.com/EU_Commission/status/ai-act-effective",
+    "发布时间": "2026-05-03",
+    "阅览量": 1200000,
+    "互动量": 95000,
+    "主题标签": ["AI Regulation", "EU", "Policy"]
+  },
+  {
+    "id": "x_005",
+    "标题": "GPT-5.5 Drops April 23: Codex Desktop + Prism Research Edition",
+    "内容摘要": "OpenAI confirms GPT-5.5 release. Codex desktop agent for autonomous coding, Prism for scientific literature analysis, 40% enterprise API performance boost. Subscription pricing increased.",
+    "原文链接": "https://x.com/OpenAI/status/gpt-55-release",
+    "发布时间": "2026-05-01",
+    "阅览量": 1560000,
+    "互动量": 112000,
+    "主题标签": ["OpenAI", "GPT-5", "New Model"]
+  },
+  {
+    "id": "x_006",
+    "标题": "Claude Mythos Preview: 93.9% SWE-bench, $25/$125 Pricing",
+    "内容摘要": "Anthropic's secret weapon leaked. Mythos Preview SWE-bench 93.9%, SWE-bench Pro 77.8%. Project Glasswing exclusive access for 12 top institutions. $100M usage credits committed.",
+    "原文链接": "https://x.com/lmsys/status/claude-mythos-preview",
+    "发布时间": "2026-05-04",
+    "阅览量": 980000,
+    "互动量": 87000,
+    "主题标签": ["Claude", "Mythos", "Leak"]
+  },
+  {
+    "id": "x_007",
+    "标题": "Google I/O 2026 May 19-20: Major Gemini Updates Expected",
+    "内容摘要": "Google I/O 2026 confirmed for May 19-20 at Shoreline Amphitheatre. Gemini model updates, Agentic Coding, Android AI integration headline. Brin personally driving DeepMind to match Claude.",
+    "原文链接": "https://x.com/Google/status/io-2026-announce",
+    "发布时间": "2026-05-04",
+    "阅览量": 780000,
+    "互动量": 45000,
+    "主题标签": ["Google", "Gemini", "Developer Conference"]
+  },
+  {
+    "id": "x_008",
+    "标题": "Seedance 2.0 vs Kling 3.0 vs Veo 3.1: The Post-Sora Battle",
+    "内容摘要": "ByteDance Seedance 2.0 in CapCut (2K, 4-modal input). Kuaishou Kling 3.0 (4K/60fps, AI director). Google Veo 3.1 (audio gen). Runway Gen-4.5 (Motion Brush 3.0). Who wins the AI video war?",
+    "原文链接": "https://x.com/DrJimFan/status/ai-video-wars-2026",
+    "发布时间": "2026-05-03",
+    "阅览量": 1340000,
+    "互动量": 98000,
+    "主题标签": ["AI Video", "Comparison", "ByteDance"]
+  },
+  {
+    "id": "x_009",
+    "标题": "Gemini 3.1 Deep Research Adds MCP, Native Charts, Streaming",
+    "内容摘要": "Google Gemini Deep Research major May update: MCP protocol for enterprise data, native chart/infographic generation, collaborative planning, real-time streaming output. Research agent capabilities leapfrog.",
+    "原文链接": "https://x.com/GoogleDeepMind/status/gemini-deep-research-mcp",
+    "发布时间": "2026-05-02",
+    "阅览量": 560000,
+    "互动量": 34000,
+    "主题标签": ["Gemini", "AI Research", "Enterprise AI"]
+  },
+  {
+    "id": "x_010",
+    "标题": "Digital Replica Rights Act: AI Videos Must Have Visible Watermarks",
+    "内容摘要": "New law requires visible digital watermarks on all AI-generated videos containing human likeness. Junior VFX compositor roles down 40% globally. New 'AI Cinematographer' role emerging at $80K+ salaries.",
+    "原文链接": "https://x.com/techpolicy/status/digital-replica-act",
+    "发布时间": "2026-05-02",
+    "阅览量": 670000,
+    "互动量": 52000,
+    "主题标签": ["AI Regulation", "Employment", "AI Video"]
   }
 ]

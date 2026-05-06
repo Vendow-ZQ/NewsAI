@@ -16,7 +16,7 @@ from typing import Any
 from core.agents.base import BaseAgent
 from core.storage.id_generator import IDGenerator
 from core.utils.feishu_base import FeishuBaseManager
-from feishu_adapter.doc_storage import get_doc_storage
+from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
 
 
 class AnalystAgent(BaseAgent):
@@ -301,34 +301,34 @@ B站：播放量{data.get("B站_播放量", 0)}, 点赞{data.get("B站_点赞数
             }
 
     def _write_storage(self, context: dict, result: dict):
-        """写入DATA表并创建经验总结文档。
+        """写入DATA表并创建经验总结云文档。
 
-        将分析结果写入"数据库"表，追加经验总结到飞书文档。
+        将分析结果写入"数据库"表，创建/追加经验总结到飞书云文档。
         """
         analyses = result.get("analyses", [])
-        doc_storage = get_doc_storage()
+        doc_storage = FeishuDocStorage()
+        period = datetime.now().strftime("%Y%m")
+        period_cn = datetime.now().strftime("%Y年%m月")
 
         for analysis in analyses:
             raw_data = analysis["raw_data"]
             llm_analysis = analysis["analysis"]
 
             business_id = IDGenerator.generate("DATA")
-
-            # 准备经验总结内容
+            topic_title = analysis["topic_title"]
             experience_content = llm_analysis.get("成败分析", "")
             suggestions = llm_analysis.get("选题建议", [])
 
             # 构建经验总结文档（Markdown格式）
-            period = datetime.now().strftime("%Y年%m月")
             experience_doc = self._format_experience_document(
-                period, analysis["topic_title"], experience_content, suggestions, raw_data
+                period_cn, topic_title, experience_content, suggestions, raw_data
             )
 
             try:
                 record_data = {
                     "id": business_id,
                     "选题ID": analysis["topic_id"],
-                    "选题标题": analysis["topic_title"],
+                    "选题标题": topic_title,
                     "公众号_阅读量": raw_data.get("公众号_阅读量", 0),
                     "公众号_点赞数": raw_data.get("公众号_点赞数", 0),
                     "公众号_在看数": raw_data.get("公众号_在看数", 0),
@@ -350,10 +350,28 @@ B站：播放量{data.get("B站_播放量", 0)}, 点赞{data.get("B站_点赞数
 
                 self.storage.create("数据库", record_data)
 
-                # 追加经验总结到飞书文档
-                doc_url = doc_storage.append_to_experience_doc(experience_doc)
-                print(f"[小数] 创建数据分析: {analysis['topic_title'][:30]}...")
+                # 创建/追加经验总结云文档
+                existing = self.storage.get_by_id("数据库", business_id)
+                existing_url = existing.data.get("经验文档链接", "") if existing else ""
+
+                if existing_url:
+                    # Handle URL field format - could be dict or string
+                    url_str = existing_url.get('link', '') if isinstance(existing_url, dict) else existing_url
+                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
+                else:
+                    doc_id = doc_storage.create_experience_doc(period, topic_title)
+
+                doc_storage.append_section(doc_id, experience_doc)
+
+                # 设置权限（组织内可查看）
+                doc_storage.set_permissions(doc_id, share_type="tenant_readable")
+                doc_url = doc_storage.get_share_url(doc_id)
+
+                print(f"[小数] 创建数据分析: {topic_title[:30]}...")
                 print(f"[小数] 经验总结文档: {doc_url}")
+
+                # 更新数据库的经验文档链接
+                self.storage.update("数据库", business_id, {"经验文档链接": doc_url})
 
                 # 更新选题库的数据回流ID
                 self.storage.update(

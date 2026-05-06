@@ -4,7 +4,9 @@
 1. 读取选题库中状态="已选"的选题
 2. 读取KOC人设
 3. 用LLM生成4平台版本（公众号/小红书/抖音/B站）
-4. 更新选题库：帖子内容字段 + 状态="生产中"
+4. 创建飞书云文档（[帖子] {date} {title}）
+5. 将文档URL回填到选题库"帖子文档链接"字段
+6. 更新状态="生产中"
 """
 
 import json
@@ -12,23 +14,20 @@ from datetime import datetime
 from typing import Any
 
 from core.agents.base import BaseAgent
-from feishu_adapter.doc_storage import get_doc_storage
+from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
 
 
 class ContentWriterAgent(BaseAgent):
     """小文 ContentWriter - 文字编辑。
 
-    负责把选题写成4平台版本的内容。
+    负责把选题写成4平台版本的内容，存入独立飞书云文档。
     """
 
     def __init__(self, storage: Any, llm_client: Any):
         super().__init__("小文", storage, llm_client)
 
     def _read_upstream(self, context: dict) -> dict:
-        """读取选题库中"已选"状态的选题。
-
-        从"选题库"表中读取状态为"已选"的选题。
-        """
+        """读取选题库中"已选"状态的选题。"""
         try:
             from core.storage.interface import QueryFilter
             filters = [QueryFilter(field="状态", operator="eq", value="已选")]
@@ -43,14 +42,7 @@ class ContentWriterAgent(BaseAgent):
         return {}
 
     def _invoke_llm(self, context: dict, upstream_data: dict, tool_results: dict) -> dict:
-        """LLM生成4平台版本内容。
-
-        对每个选题，结合KOC人设，使用LLM生成：
-        - 公众号版本（1500-3000字）
-        - 小红书版本（300-500字）
-        - 抖音版本（30-60秒文案）
-        - B站版本
-        """
+        """LLM生成4平台版本内容。"""
         topics = upstream_data.get("topics", [])
         koc = context.get("koc", {})
 
@@ -130,7 +122,6 @@ KOC语气：{koc.get('语气', '玩梗活泼 + 专业硬核。让大家学到真
             else:
                 content = str(response)
 
-            # 尝试从markdown代码块中提取JSON
             if '```json' in content:
                 content = content.split('```json')[1].split('```')[0]
             elif '```' in content:
@@ -147,13 +138,10 @@ KOC语气：{koc.get('语气', '玩梗活泼 + 专业硬核。让大家学到真
             }
 
     def _write_storage(self, context: dict, result: dict):
-        """更新选题库。
-
-        将生成的4平台内容追加写入飞书文档"帖子内容"，
-        更新状态为"生产中"。
-        """
+        """创建飞书云文档并回填URL。"""
         contents = result.get("contents", [])
-        doc_storage = get_doc_storage()
+        doc_storage = FeishuDocStorage()
+        date_str = datetime.now().strftime("%Y%m%d")
 
         for content in contents:
             topic_id = content.get("topic_id", "")
@@ -161,16 +149,34 @@ KOC语气：{koc.get('语气', '玩梗活泼 + 专业硬核。让大家学到真
             platforms = content.get("platforms", {})
 
             try:
-                # 构建文档内容（Markdown格式）
-                doc_content = self._format_post_document(topic_title, platforms)
+                # 检查是否已有文档链接
+                existing = self.storage.get_by_id("选题库", topic_id)
+                existing_url = existing.data.get("帖子文档链接", "") if existing else ""
 
-                # 追加到飞书文档
-                doc_url = doc_storage.append_to_posts_doc(doc_content)
-                print(f"[小文] 写入帖子内容: {topic_title[:30]}...")
+                if existing_url:
+                    # 已有文档，追加内容（理论上小文只写一次，但做保护）
+                    # 从URL中提取 doc_id
+                    # Handle URL field format - could be dict {'link': '...', 'text': '...'} or string
+                    url_str = existing_url.get('link', '') if isinstance(existing_url, dict) else existing_url
+                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
+                else:
+                    # 创建新文档
+                    doc_id = doc_storage.create_post_doc(topic_title, date_str)
+
+                # 构建并写入内容
+                doc_markdown = self._format_post_document(topic_title, platforms)
+                doc_storage.append_section(doc_id, doc_markdown)
+
+                # 设置权限（组织内可查看）并获取分享链接
+                doc_storage.set_permissions(doc_id, share_type="tenant_readable")
+                doc_url = doc_storage.get_share_url(doc_id)
+
+                print(f"[小文] 写入帖子文档: {topic_title[:30]}...")
                 print(f"[小文] 文档链接: {doc_url}")
 
-                # 只更新状态字段
+                # 更新选题库：URL + 状态
                 update_data = {
+                    "帖子文档链接": doc_url,
                     "状态": "生产中",
                     "生产开始时间": int(datetime.now().timestamp() * 1000),
                 }
@@ -178,12 +184,11 @@ KOC语气：{koc.get('语气', '玩梗活泼 + 专业硬核。让大家学到真
             except Exception as e:
                 print(f"[小文] 写入文档失败: {e}")
                 # 失败时仍然更新状态
-                update_data = {
-                    "状态": "生产中",
-                    "生产开始时间": int(datetime.now().timestamp() * 1000),
-                }
                 try:
-                    self.storage.update("选题库", topic_id, update_data)
+                    self.storage.update("选题库", topic_id, {
+                        "状态": "生产中",
+                        "生产开始时间": int(datetime.now().timestamp() * 1000),
+                    })
                 except Exception as e2:
                     print(f"[小文] 更新状态失败: {e2}")
 
@@ -191,7 +196,6 @@ KOC语气：{koc.get('语气', '玩梗活泼 + 专业硬核。让大家学到真
         """格式化帖子内容为Markdown文档格式。"""
         content = f"# {topic_title}\n\n"
 
-        # 公众号
         if "公众号" in platforms:
             gzh = platforms["公众号"]
             content += "## 公众号版本\n\n"
@@ -201,7 +205,6 @@ KOC语气：{koc.get('语气', '玩梗活泼 + 专业硬核。让大家学到真
             if gzh.get('配图说明'):
                 content += f"*配图*: {gzh.get('配图说明')}\n\n"
 
-        # 小红书
         if "小红书" in platforms:
             xhs = platforms["小红书"]
             content += "## 小红书版本\n\n"
@@ -210,7 +213,6 @@ KOC语气：{koc.get('语气', '玩梗活泼 + 专业硬核。让大家学到真
             if xhs.get('标签'):
                 content += f"*标签*: {xhs.get('标签')}\n\n"
 
-        # 抖音
         if "抖音" in platforms:
             dy = platforms["抖音"]
             content += "## 抖音版本\n\n"
@@ -219,7 +221,6 @@ KOC语气：{koc.get('语气', '玩梗活泼 + 专业硬核。让大家学到真
             if dy.get('CTA'):
                 content += f"*CTA*: {dy.get('CTA')}\n\n"
 
-        # B站
         if "B站" in platforms:
             bz = platforms["B站"]
             content += "## B站版本\n\n"

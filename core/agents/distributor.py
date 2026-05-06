@@ -79,17 +79,13 @@ class DistributorAgent(BaseAgent):
 
         distribution_results = []
         for topic in topics:
-            # 获取帖子内容和视频脚本
-            post_content = topic.get("帖子内容", "")
-            script_content = topic.get("视频脚本内容", "")
+            # 获取帖子文档链接和视频脚本链接（云文档URL）
+            post_doc_url = topic.get("帖子文档链接", "")
+            script_doc_url = topic.get("视频脚本文档链接", "")
 
-            # 解析JSON内容
-            try:
-                posts = json.loads(post_content) if post_content else {}
-                scripts = json.loads(script_content) if script_content else {}
-            except json.JSONDecodeError:
-                posts = {"原始内容": post_content}
-                scripts = {"原始内容": script_content}
+            # 云文档内容不在字段中，使用选题元数据构建分发计划
+            posts = {"文档链接": post_doc_url}
+            scripts = {"文档链接": script_doc_url}
 
             # 构建分发计划提示词
             prompt = self._build_distribution_prompt(topic, posts, scripts, koc)

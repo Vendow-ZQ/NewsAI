@@ -175,9 +175,9 @@ TOPIC_FIELDS: List[Dict[str, Any]] = [
     make_field("生产开始时间", FIELD_TYPE_DATETIME),                # 状态变"生产中"时填
     make_field("生产完成时间", FIELD_TYPE_DATETIME),                # 状态变"审改中"时填
     make_field("发布完成时间", FIELD_TYPE_DATETIME),                # 状态变"已发布"时填
-    make_field("帖子内容", FIELD_TYPE_DOCUMENT),                   # Bitable文档字段 - 小文创建
-    make_field("视频脚本", FIELD_TYPE_DOCUMENT),                   # Bitable文档字段 - 小播创建
-    make_field("审改记录", FIELD_TYPE_DOCUMENT),                   # Bitable文档字段 - 小审/小改维护
+    make_field("帖子文档链接", FIELD_TYPE_URL),                    # 飞书Docx链接 - 小文创建
+    make_field("视频脚本文档链接", FIELD_TYPE_URL),                # 飞书Docx链接 - 小播创建
+    make_field("审改文档链接", FIELD_TYPE_URL),                    # 飞书Docx链接 - 小审/小改维护
     make_field("审改轮次", FIELD_TYPE_NUMBER, required=True),       # 默认0，每轮+1，max 3
     make_field("审改最终状态", FIELD_TYPE_SINGLE_SELECT),           # 通过/卡死/待人工
     make_field("分发计划JSON", FIELD_TYPE_TEXT),                    # 小发产出，存平台×时间×版本
@@ -215,7 +215,7 @@ DATA_FIELDS: List[Dict[str, Any]] = [
     # 综合分析
     make_field("综合评分", FIELD_TYPE_NUMBER, required=True),       # 0-1，小数计算
     make_field("爆点验证", FIELD_TYPE_SINGLE_SELECT, required=True), # 验证成功/部分验证/未爆
-    make_field("经验总结", FIELD_TYPE_DOCUMENT),                   # Bitable文档字段 - 小数创建
+    make_field("经验文档链接", FIELD_TYPE_URL),                    # 飞书Docx链接 - 小数创建
     make_field("数据采集时间", FIELD_TYPE_DATETIME, required=True), # 自动
     make_field("数据状态", FIELD_TYPE_SINGLE_SELECT, required=True), # 初次采集/已迭代分析/已沉淀经验
 ]
