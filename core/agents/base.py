@@ -103,12 +103,16 @@ class BaseAgent(ABC):
         # 获取任务类型文本（单选字段需要在选项列表中）
         task_type = self._get_task_type()
 
-        # 极简日志格式，逐个字段测试
+        # 必填字段：id, AgentID, Agent花名, 任务类型, 输入摘要, 输出摘要, 执行状态, 执行时间
         log_entry = {
             "id": f"LOG-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+            "AgentID": getattr(self, 'emp_id', 'EMP-001'),
             "Agent花名": str(self.name),
-            "输入摘要": f"{self.name} executed",  # 简化摘要
-            "输出摘要": f"result count: {len(result) if isinstance(result, dict) else 0}",  # 简化摘要
+            "任务类型": "其他",  # 单选字段，先用"其他"，之后可以细化
+            "输入摘要": f"{self.name} executed task",
+            "输出摘要": f"Completed with result count: {len(result) if isinstance(result, dict) else 0}",
+            "执行状态": "成功",  # 单选字段
+            "执行时间": int(time.time() * 1000),
         }
         try:
             self.storage.create("Agent协作日志", log_entry)
