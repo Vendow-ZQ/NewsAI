@@ -103,19 +103,12 @@ class BaseAgent(ABC):
         # 获取任务类型文本（单选字段需要在选项列表中）
         task_type = self._get_task_type()
 
+        # 极简日志格式，逐个字段测试
         log_entry = {
             "id": f"LOG-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            "AgentID": getattr(self, 'emp_id', ''),
-            "Agent花名": self.name,
-            # "任务类型": task_type,  # 暂时注释，单选字段可能导致TextFieldConvFail
-            "关联业务ID": related_id,
-            "输入摘要": str(context)[:200],
-            "输出摘要": str(result)[:200],
-            # "执行状态": "成功",  # 暂时注释，单选字段可能导致TextFieldConvFail
-            "耗时秒数": int(elapsed_seconds),
-            "Token消耗": 0,
-            "错误信息": "",
-            "执行时间": int(time.time() * 1000),
+            "Agent花名": str(self.name),
+            "输入摘要": f"{self.name} executed",  # 简化摘要
+            "输出摘要": f"result count: {len(result) if isinstance(result, dict) else 0}",  # 简化摘要
         }
         try:
             self.storage.create("Agent协作日志", log_entry)
@@ -123,7 +116,6 @@ class BaseAgent(ABC):
         except Exception as e:
             # 日志写入失败不应影响主流程
             print(f"[警告] {self.name}: 写入Agent协作日志失败: {e}")
-            print(f"[调试] 写入数据: {log_entry}")
 
     def _get_task_type(self) -> str:
         """获取任务类型，用于Agent协作日志。
