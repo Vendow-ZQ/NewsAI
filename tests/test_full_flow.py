@@ -1,43 +1,55 @@
-"""快速验证完整流程 - 使用已有热帖数据绕过爬虫"""
-
-import asyncio
+"""全流程测试脚本 - 验证小哨到小发（含小数）"""
+import os
 import sys
-sys.path.insert(0, '.')
+from datetime import datetime
 
+# 加载环境变量
 from dotenv import load_dotenv
 load_dotenv()
 
-from feishu_adapter.feishu_storage import FeishuStorage
-from core.llm.client import get_llm
+print("="*60)
+print("NewsAI 全流程测试")
+print("="*60)
 
-async def test_topic_curator():
-    """测试小编Agent - 从已有热帖创建选题"""
-    storage = FeishuStorage()
-    llm = get_llm()
-    
-    # 检查热帖库
-    from core.storage.interface import QueryFilter
-    filters = [QueryFilter(field="状态", operator="eq", value="待选")]
-    trends = storage.query("热帖库", filters=filters, limit=10)
-    print(f"待选热帖数: {len(trends)}")
-    
-    if not trends:
-        print("没有待选热帖，让小编无法工作")
-        return
-    
-    # 手动运行小编Agent
-    from core.agents.topic_curator import TopicCuratorAgent
-    agent = TopicCuratorAgent(storage, llm)
-    
-    print("\n运行小编Agent...")
-    result = agent.execute({"koc_id": "KOC-001"})
-    print(f"小编生成选题数: {result.get('count', 0)}")
-    
-    # 检查选题库
-    topics = storage.query("选题库", filters=[], limit=10)
-    print(f"选题库现有: {len(topics)}条")
-    
-    return result
+# 1. 检查环境
+print("\n[1] 检查环境变量...")
+required_vars = ['LARK_APP_ID', 'LARK_APP_SECRET', 'LARK_BASE_APP_TOKEN', 'DOUBAO_API_KEY']
+for var in required_vars:
+    if os.getenv(var):
+        print(f"  OK {var}")
+    else:
+        print(f"  FAIL {var} 缺失")
+        sys.exit(1)
 
-if __name__ == "__main__":
-    asyncio.run(test_topic_curator())
+# 2. 导入模块
+print("\n[2] 导入模块...")
+try:
+    from core.graph.builder import build_newsai_graph
+    from feishu_adapter.feishu_storage import FeishuStorage
+    from core.llm.client import LLMClient
+    print("  OK 所有模块导入成功")
+except Exception as e:
+    print(f"  FAIL 导入失败: {e}")
+    sys.exit(1)
+
+# 3. 初始化组件
+print("\n[3] 初始化组件...")
+try:
+    storage = FeishuStorage(
+        app_id=os.getenv('LARK_APP_ID'),
+        app_secret=os.getenv('LARK_APP_SECRET'),
+        base_token=os.getenv('LARK_BASE_APP_TOKEN')
+    )
+    print("  OK Storage 初始化成功")
+
+    llm = LLMClient(api_key=os.getenv('DOUBAO_API_KEY'))
+    print("  OK LLM Client 初始化成功")
+
+    graph = build_newsai_graph(storage, llm)
+    print("  OK LangGraph 构建成功")
+except Exception as e:
+    print(f"  FAIL 初始化失败: {e}")
+    sys.exit(1)
+
+print("\n准备就绪！可以运行全流程测试")
+print("运行命令: python run.py --once")

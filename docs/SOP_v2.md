@@ -631,3 +631,41 @@ Step 5: 运行 `python run.py --once` 验证全流程
 
 *SOP v2 更新于 2026-05-04 23:00 SGT*  
 *更新内容: 补充测试状态汇总、Bug修复状态跟踪、Stage 10验收标准*
+
+
+---
+
+## Stage 11 · Prompt工程v2.0落地（5/7 02:00-03:00）✅ 完成
+
+**目标**: 基于 Final_Prompts.md v2.0 工程级重写，更新所有 Agent 的 System Prompt。
+
+**设计原则**（来自 Anthropic/MicroSoft 最佳实践）：
+1. XML结构化分区 - role/context/rules/examples/self_check 标签
+2. Few-Shot示例 - 每个Agent 3+示例（正例+反例+边界例）
+3. 人设翻译 - 抽象KOC人设→可执行标准
+4. Thinking块 - 强制CoT思考，提升推理准确率40%+
+5. 输出契约 - 严格JSON schema + 字数上限
+6. 单一职责 - 每个Agent只做一件事
+7. 自检清单 - 输出前LLM自我review
+
+**更新清单**:
+
+| Agent | 文件 | 核心改进 |
+|-------|------|----------|
+| 小哨 | trend_scout.py | XML结构化+评分维度 |
+| 小编 | topic_curator.py | 3关筛查+5维度爆点 |
+| 小文 | content_writer.py | 4平台铁律+中文爆款 |
+| 小图 | visual_designer.py | 3类图决策树 |
+| 小播 | script_writer.py | 抖音/B站脚本铁律 |
+| 小审 | reviewer.py | 4维度审查+问题清单 |
+| 小改 | editor.py | 精确修改+changelog |
+| 小发 | distributor.py | 黄金时段+错峰策略 |
+| 小数 | analyst.py | 数据回流+月度沉淀 |
+
+**验收标准**:
+- [x] 9个Agent全部更新System Prompt
+- [x] worklog.md, README.md, SOP_v2.md 已更新
+
+---
+
+*SOP v2 更新于 2026-05-07 02:30 SGT*
