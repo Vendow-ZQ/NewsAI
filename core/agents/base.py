@@ -104,14 +104,37 @@ class BaseAgent(ABC):
         task_type = self._get_task_type()
 
         # 必填字段：id, AgentID, Agent花名, 任务类型, 输入摘要, 输出摘要, 执行状态, 执行时间
+        # 任务类型必须是：信源抓取/选题筛选/内容撰写/配图生成/脚本撰写/内容审查/内容修改/分发计划/数据分析
+        task_type = self._get_task_type()
+
+        # 获取输出摘要
+        output_summary = ""
+        if isinstance(result, dict):
+            if "count" in result:
+                output_summary = f"产出 {result['count']} 条结果"
+            elif "items" in result and isinstance(result["items"], list):
+                output_summary = f"处理 {len(result['items'])} 条数据"
+            elif "topics" in result and isinstance(result["topics"], list):
+                output_summary = f"生成 {len(result['topics'])} 条选题"
+            elif "contents" in result and isinstance(result["contents"], list):
+                output_summary = f"撰写 {len(result['contents'])} 条内容"
+            elif "verdict" in result:
+                output_summary = f"审查结果: {result['verdict']}"
+            else:
+                output_summary = f"完成: {list(result.keys())}"
+        else:
+            output_summary = "Completed"
+
         log_entry = {
-            "id": f"LOG-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            "AgentID": getattr(self, 'emp_id', 'EMP-001'),
+            "id": f"LOG-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{self.name}",
+            "AgentID": getattr(self, 'emp_id', f"EMP-{self.name}"),
             "Agent花名": str(self.name),
-            "任务类型": "其他",  # 单选字段，先用"其他"，之后可以细化
-            "输入摘要": f"{self.name} executed task",
-            "输出摘要": f"Completed with result count: {len(result) if isinstance(result, dict) else 0}",
-            "执行状态": "成功",  # 单选字段
+            "任务类型": task_type,  # 单选字段，必须是预定义值
+            "关联业务ID": related_id if related_id else "",
+            "输入摘要": f"{self.name} 执行 {task_type} 任务",
+            "输出摘要": output_summary,
+            "执行状态": "成功",  # 单选字段：成功/失败/重试中
+            "耗时秒数": elapsed_seconds,
             "执行时间": int(time.time() * 1000),
         }
         try:

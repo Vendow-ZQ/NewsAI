@@ -1,58 +1,41 @@
-"""小哨 -- 信息采集 Agent (TrendScout)。
-SYSTEM_PROMPT = """
-\
-<role>
-你是「小哨 TrendScout」，NewsAI 编辑部的信息官。
-你的工作是：对从全球信息源抓回来的原始 AI 热帖，做结构化的初步评估。
+# -*- coding: utf-8 -*-
+"""小哨 -- 信息采集 Agent (TrendScout)。"""
+
+SYSTEM_PROMPT = """[角色]
+你是小哨 TrendScout，NewsAI 编辑部的信息官。
+你的工作是对从全球信息源抓回来的原始 AI 热帖，做结构化的初步评估。
 你不做选题决策（那是小编的事），你只做数据预处理和打分。
-</role>
 
-<workflow>
-1. 阅读 <input> 中的一条热帖（标题 + 摘要 + 来源）
-2. 在 <thinking> 里思考：
-   - 这条信息对 KOC【{koc_account}】的领域是否相关？
-   - 这条信息的"信息密度"高不高？（有实质内容 vs 标题党）
+[工作流程]
+1. 阅读 input 中的一条热帖（标题 + 摘要 + 来源）
+2. 在 thinking 里思考：
+   - 这条信息对 KOC 的领域是否相关？
+   - 这条信息的"信息密度"高不高？
    - 这条信息属于什么主题分类？
-3. 在 <answer> 输出 JSON
-</workflow>
+3. 在 answer 输出 JSON
 
-<output_format>
-先在 <thinking>...</thinking> 里思考（≤100字），
-然后在 <answer>{...}</answer> 里输出 JSON。
-</output_format>
-"""
-
-
-小哨是NewsAI的信息官，负责：
-1. 从多个信息源抓取最新AI动态
-2. 使用LLM进行热度评分和标签提取
-3. 将处理后的热帖写入热帖池
+[输出格式]
+先在 thinking... 里思考（小于100字），
+然后在 answer{...} 里输出 JSON。
 """
 
 import json
+import os
 from datetime import datetime
 from typing import Any
 
 from core.agents.base import BaseAgent
-from core.sources import get_source
 
 
 class TrendScoutAgent(BaseAgent):
-    """小哨 TrendScout - 信息官。
-
-    负责信息采集、热度评分、标签提取。
-    """
+    """小哨 TrendScout - 信息官。"""
 
     def __init__(self, storage: Any, llm_client: Any):
         super().__init__("小哨", storage, llm_client)
 
-    def _read_upstream(self, context: dict) -> dict:
-        """读取信源配置。
-
-        从"信源配置"表中读取所有启用的信源。
-        """
+    def _read_upstream(self, context: dict):
+        """读取信源配置。"""
         try:
-            # 使用 storage.query 查询启用的信源
             from core.storage.interface import QueryFilter
             filters = [QueryFilter(field="是否启用", operator="eq", value=True)]
             sources = self.storage.query("信源配置", filters=filters, limit=100)
@@ -61,65 +44,63 @@ class TrendScoutAgent(BaseAgent):
             print(f"[小哨] 读取信源配置失败: {e}")
             return {"sources": []}
 
-    def _invoke_tools(self, context: dict, upstream_data: dict) -> dict:
-        """抓取信息源（MOCK模式）。
+    def _invoke_tools(self, context: dict, upstream_data: dict):
+        """抓取信息源（MOCK模式）。从 mock_data/ 目录读取JSON文件。"""
+        import hashlib
 
-        直接返回mock热帖数据，不调用真实爬虫。
-        """
-        mock_items = [
-            {
-                "标题": "OpenAI发布GPT-5预览版，多模态能力大幅提升",
-                "原文摘要": "OpenAI今日正式发布GPT-5预览版本，新模型在图像理解、视频生成和多语言处理方面实现突破性进展。据官方介绍，GPT-5的推理能力较前代提升40%，支持长达100万token的上下文窗口。",
-                "原文链接": "https://example.com/news/1",
-                "信源平台": "MOCK-科技资讯",
-                "信源ID": "mock-001",
-                "抓取时间": datetime.now().isoformat(),
-            },
-            {
-                "标题": "Anthropic推出Claude 4.6：编程能力超越GPT-4",
-                "原文摘要": "Anthropic发布新一代大模型Claude 4.6，在SWE-bench编程基准测试中创下新纪录。新模型支持更长的思维链，在复杂代码重构和bug修复任务上表现优异。",
-                "原文链接": "https://example.com/news/2",
-                "信源平台": "MOCK-AI动态",
-                "信源ID": "mock-002",
-                "抓取时间": datetime.now().isoformat(),
-            },
-            {
-                "标题": "Google Gemini 2.0震撼登场，原生多模态引领行业",
-                "原文摘要": "Google DeepMind发布Gemini 2.0系列模型，首次实现真正意义上的原生多模态理解。模型可同时处理文本、图像、音频、视频输入，并生成任意模态输出。",
-                "原文链接": "https://example.com/news/3",
-                "信源平台": "MOCK-科技资讯",
-                "信源ID": "mock-003",
-                "抓取时间": datetime.now().isoformat(),
-            },
-            {
-                "标题": "马斯克xAI完成新一轮融资，估值突破500亿美元",
-                "原文摘要": "埃隆·马斯克旗下人工智能公司xAI宣布完成60亿美元C轮融资，公司估值达到500亿美元。本轮融资将用于加速Grok模型训练和建设超级算力集群。",
-                "原文链接": "https://example.com/news/4",
-                "信源平台": "MOCK-财经科技",
-                "信源ID": "mock-004",
-                "抓取时间": datetime.now().isoformat(),
-            },
-            {
-                "标题": "Midjourney V7发布：AI绘画进入实时生成时代",
-                "原文摘要": "Midjourney正式发布V7版本，引入实时画布功能，用户可通过简单涂鸦实时生成高质量图像。新版本还支持风格迁移和角色一致性控制，创作效率提升10倍。",
-                "原文链接": "https://example.com/news/5",
-                "信源平台": "MOCK-AI工具",
-                "信源ID": "mock-005",
-                "抓取时间": datetime.now().isoformat(),
-            },
+        mock_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "mock_data")
+
+        mock_files = [
+            ("xiaohongshu_hot.json", "小红书"),
+            ("douyin_hot.json", "抖音"),
+            ("github_trending.json", "GitHub"),
+            ("hackernews_hot.json", "HackerNews"),
+            ("arxiv_papers.json", "arXiv"),
+            ("reddit_posts.json", "Reddit"),
+            ("x_hot.json", "X/Twitter"),
         ]
 
-        print(f"[小哨] MOCK模式：返回 {len(mock_items)} 条热帖")
+        mock_items = []
+
+        for filename, source_name in mock_files:
+            filepath = os.path.join(mock_dir, filename)
+            if os.path.exists(filepath):
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+
+                    items = data if isinstance(data, list) else [data] if data else []
+
+                    # 确保每个信源只取前20条
+                    items = items[:20] if len(items) > 20 else items
+                    for item in items:
+                        title = item.get("标题") or item.get("title") or item.get("热帖标题") or item.get("name") or item.get("repo") or "无标题"
+                        summary = item.get("原文摘要") or item.get("summary") or item.get("内容摘要") or item.get("description") or ""
+                        link = item.get("原文链接") or item.get("link") or item.get("原始链接") or item.get("url") or ""
+                        item_id = hashlib.md5(f"{source_name}:{title}".encode()).hexdigest()[:8]
+
+                        mock_items.append({
+                            "标题": title,
+                            "原文摘要": summary[:500] if summary else "暂无摘要",
+                            "原文链接": link,
+                            "信源平台": source_name,
+                            "信源ID": f"{source_name.lower()}-{item_id}",
+                            "抓取时间": datetime.now().isoformat(),
+                        })
+
+                    print(f"[小哨] 从 {filename} 加载了 {len(items[:20])} 条热帖")
+                except Exception as e:
+                    print(f"[小哨] 加载 {filename} 失败: {e}")
+
+        if not mock_items:
+            print("[小哨] 警告: 没有从mock_data加载到数据")
+            mock_items = [{"标题": "默认数据", "原文摘要": "请检查mock_data目录", "原文链接": "", "信源平台": "MOCK", "信源ID": "mock-default", "抓取时间": datetime.now().isoformat()}]
+
+        print(f"[小哨] MOCK模式: 返回 {len(mock_items)} 条热帖")
         return {"items": mock_items}
 
-    def _invoke_llm(self, context: dict, upstream_data: dict, tool_results: dict) -> dict:
-        """LLM打标签+评分。
-
-        对每条抓取的信息，使用LLM进行：
-        - 热度评分 (0-1)
-        - 内容质量评估 (高/中/低)
-        - 主题标签提取
-        """
+    def _invoke_llm(self, context: dict, upstream_data: dict, tool_results: dict):
+        """LLM打标签+评分。"""
         items = tool_results.get("items", [])
         koc = context.get("koc", {})
 
@@ -143,46 +124,41 @@ class TrendScoutAgent(BaseAgent):
         """构建LLM分析提示词。"""
         return f"""分析以下AI信息，给出热度评分(0-1)和主题标签。
 
-信息标题：{item.get('标题', item.get('title', ''))}
-信息摘要：{item.get('原文摘要', item.get('summary', ''))[:500]}
-信源平台：{item.get('信源平台', '')}
+信息标题: {item.get('标题', '')}
+信息摘要: {item.get('原文摘要', '')[:500]}
+信源平台: {item.get('信源平台', '')}
 
-KOC人设的偏好领域：{koc.get('领域', [])}
-
-请返回JSON格式：
+请返回JSON格式:
 {{"热度评分": 0.5, "内容质量": "高", "主题标签": ["AI", "大模型"]}}
 
-注意：
-- 热度评分：0-1之间的小数，1表示极高热度
-- 内容质量：高/中/低三档
-- 主题标签：2-4个关键词标签
+注意:
+- 热度评分: 0-1之间的小数
+- 内容质量: 高/中/低
+- 主题标签: 2-4个关键词
 """
 
     def _parse_llm_response(self, response: Any) -> dict:
         """解析LLM响应。"""
         try:
-            # 尝试直接解析JSON
             if isinstance(response, str):
-                return json.loads(response)
-            # LangChain消息对象
-            if hasattr(response, 'content'):
+                content = response
+            elif hasattr(response, "content"):
                 content = response.content
-                # 尝试从markdown代码块中提取JSON
-                if '```json' in content:
-                    content = content.split('```json')[1].split('```')[0]
-                elif '```' in content:
-                    content = content.split('```')[1].split('```')[0]
-                return json.loads(content.strip())
-            return {}
+            else:
+                return {}
+
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0]
+
+            return json.loads(content.strip())
         except Exception as e:
-            print(f"[小哨] 解析LLM响应失败: {e}")
+            print(f"[小哨] 解析失败: {e}")
             return {}
 
     def _write_storage(self, context: dict, result: dict):
-        """写入热帖池。
-
-        将处理后的热帖写入"热帖池"表。
-        """
+        """写入热帖池。"""
         items = result.get("items", [])
         from core.storage.id_generator import IDGenerator
 
@@ -190,29 +166,26 @@ KOC人设的偏好领域：{koc.get('领域', [])}
             business_id = IDGenerator.generate("TREND")
             record_data = {
                 "id": business_id,
-                "标题": item.get("标题", item.get("title", "")),
-                
-                "原文摘要": item.get("原文摘要", item.get("summary", "")),
+                "标题": item.get("标题", ""),
+                "原文摘要": item.get("原文摘要", ""),
                 "信源平台": item.get("信源平台", ""),
                 "信源ID": item.get("信源ID", ""),
                 "热度评分": item.get("热度评分", 0.5),
                 "内容质量": item.get("内容质量", "中"),
                 "主题标签": item.get("主题标签", []),
                 "状态": "待选",
-                
             }
             try:
                 self.storage.create("热帖库", record_data)
+                print(f"[小哨] 写入热帖库: {item.get('标题', '')[:30]}...")
             except Exception as e:
                 print(f"[小哨] 写入热帖库失败: {e}")
 
     def _log_work(self, context: dict, result: dict):
         """记录工作日志。"""
         count = result.get("count", 0)
-        print(f"[小哨] 完成：抓取 {count} 条热帖")
-        # 调用父类的日志方法
+        print(f"[小哨] 完成: 抓取 {count} 条热帖")
         super()._log_work(context, result)
 
 
-# 保持向后兼容的别名
 TrendScout = TrendScoutAgent
