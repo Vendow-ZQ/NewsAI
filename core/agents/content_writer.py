@@ -53,7 +53,7 @@ from typing import Any
 
 
 
-from core.agents.base import BaseAgent
+from core.agents.base import BaseAgent, parse_koc_data
 
 from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
 
@@ -116,6 +116,7 @@ class ContentWriterAgent(BaseAgent):
         topics = upstream_data.get("topics", [])
 
         koc = context.get("koc", {})
+        koc = parse_koc_data(koc)
 
 
 

@@ -18,15 +18,25 @@ def _make_log(agent: str, status: str, **kwargs) -> list:
 
 
 # 小哨节点
+def _agent_context(state: NewsAIState) -> dict:
+    """构建Agent执行上下文，统一传递topic_id和koc_id。"""
+    ctx = {}
+    if state.current_topic_id:
+        ctx["topic_id"] = state.current_topic_id
+    if state.koc_id:
+        ctx["koc_id"] = state.koc_id
+    return ctx
+
+
+# 小哨节点
 def create_trend_scout_node(storage: Any, llm: Any):
     """创建小哨节点（信息采集）。"""
     def node(state: NewsAIState) -> Dict[str, Any]:
         try:
             agent = TrendScoutAgent(storage, llm)
-            result = agent.execute({"topic_id": state.current_topic_id})
+            result = agent.execute(_agent_context(state))
             return {"execution_log": _make_log("小哨", "完成", result=result)}
         except Exception as e:
-            # 使用errors列表（支持Annotated合并）而非error单值
             return {"execution_log": _make_log("小哨", "失败", error=str(e)), "errors": [str(e)]}
     return node
 
@@ -37,7 +47,7 @@ def create_topic_curator_node(storage: Any, llm: Any):
     def node(state: NewsAIState) -> Dict[str, Any]:
         try:
             agent = TopicCuratorAgent(storage, llm)
-            result = agent.execute({"topic_id": state.current_topic_id})
+            result = agent.execute(_agent_context(state))
             return {"execution_log": _make_log("小编", "完成", result=result)}
         except Exception as e:
             return {"execution_log": _make_log("小编", "失败", error=str(e)), "errors": [str(e)]}
@@ -50,7 +60,7 @@ def create_content_writer_node(storage: Any, llm: Any):
     def node(state: NewsAIState) -> Dict[str, Any]:
         try:
             agent = ContentWriterAgent(storage, llm)
-            result = agent.execute({"topic_id": state.current_topic_id})
+            result = agent.execute(_agent_context(state))
             return {"execution_log": _make_log("小文", "完成", result=result)}
         except Exception as e:
             return {"execution_log": _make_log("小文", "失败", error=str(e)), "errors": [str(e)]}
@@ -63,7 +73,7 @@ def create_visual_designer_node(storage: Any, llm: Any):
     def node(state: NewsAIState) -> Dict[str, Any]:
         try:
             agent = VisualDesignerAgent(storage, llm)
-            result = agent.execute({"topic_id": state.current_topic_id})
+            result = agent.execute(_agent_context(state))
             return {"execution_log": _make_log("小图", "完成", result=result)}
         except Exception as e:
             return {"execution_log": _make_log("小图", "失败", error=str(e)), "errors": [str(e)]}
@@ -76,7 +86,7 @@ def create_script_writer_node(storage: Any, llm: Any):
     def node(state: NewsAIState) -> Dict[str, Any]:
         try:
             agent = ScriptWriterAgent(storage, llm)
-            result = agent.execute({"topic_id": state.current_topic_id})
+            result = agent.execute(_agent_context(state))
             return {"execution_log": _make_log("小播", "完成", result=result)}
         except Exception as e:
             return {"execution_log": _make_log("小播", "失败", error=str(e)), "errors": [str(e)]}
@@ -89,15 +99,18 @@ def create_reviewer_node(storage: Any, llm: Any):
     def node(state: NewsAIState) -> Dict[str, Any]:
         try:
             agent = ReviewerAgent(storage, llm)
-            result = agent.execute({"topic_id": state.current_topic_id})
+            result = agent.execute(_agent_context(state))
             review_results = result.get("review_results", [])
             review_verdict = "通过"
             revision_count = state.revision_count
-            if review_results:
-                review_data = review_results[0].get("review_result", {})
-                review_verdict = review_data.get("审查结论", "需修改")
-                if review_verdict == "需修改":
+            # 处理多选题：任一需修改则整体需修改
+            for rr in review_results:
+                review_data = rr.get("review_result", {})
+                verdict = review_data.get("审查结论", "需修改")
+                if verdict == "需修改":
+                    review_verdict = "需修改"
                     revision_count += 1
+                    break
             return {
                 "execution_log": _make_log("小审", "完成", verdict=review_verdict),
                 "review_verdict": review_verdict,
@@ -115,7 +128,7 @@ def create_editor_node(storage: Any, llm: Any):
         try:
             from core.agents.editor import EditorAgent
             agent = EditorAgent(storage, llm)
-            result = agent.execute({"topic_id": state.current_topic_id})
+            result = agent.execute(_agent_context(state))
             return {"execution_log": _make_log("小改", "完成", result=result)}
         except Exception as e:
             return {"execution_log": _make_log("小改", "失败", error=str(e)), "errors": [str(e)]}
@@ -128,7 +141,7 @@ def create_distributor_node(storage: Any, llm: Any):
     def node(state: NewsAIState) -> Dict[str, Any]:
         try:
             agent = DistributorAgent(storage, llm)
-            result = agent.execute({"topic_id": state.current_topic_id})
+            result = agent.execute(_agent_context(state))
             return {"execution_log": _make_log("小发", "完成", result=result)}
         except Exception as e:
             return {"execution_log": _make_log("小发", "失败", error=str(e)), "errors": [str(e)]}
@@ -141,7 +154,7 @@ def create_analyst_node(storage: Any, llm: Any):
         try:
             from core.agents.analyst import AnalystAgent
             agent = AnalystAgent(storage, llm)
-            result = agent.execute({"topic_id": state.current_topic_id})
+            result = agent.execute(_agent_context(state))
             return {"execution_log": _make_log("小数", "完成", result=result)}
         except Exception as e:
             return {"execution_log": _make_log("小数", "失败", error=str(e)), "errors": [str(e)]}

@@ -118,6 +118,7 @@ class EditorAgent(BaseAgent):
             # 获取KOC人设
 
             koc = self._load_koc(context.get("koc_id", "KOC-001"))
+            koc = parse_koc_data(koc)
 
 
 
@@ -599,11 +600,17 @@ KOC平台差异化策略：
 
 
 
-                # 生成修改记录并追加
+                # 生成修改记录并追加到审改文档
 
                 edit_entry = self._format_edit_entry(topic_title, edit_summary, edit_details)
 
                 doc_storage.append_section(doc_id, edit_entry)
+
+
+
+                # 将修改后的内容写回原文档，让小审再审时能看到修改版
+
+                self._write_edited_content_back(topic_id, edit_data, doc_storage)
 
 
 
@@ -718,6 +725,144 @@ KOC平台差异化策略：
                 content += f"{script}\n\n"
 
 
+
+        return content
+
+
+
+    def _write_edited_content_back(self, topic_id: str, edit_data: dict, doc_storage: FeishuDocStorage):
+
+        """将修改后的内容追加到原始帖子文档和脚本文档。
+
+
+
+        这样小审再次审查时，能看到修改后的版本，而不是只读v0原稿。
+
+        """
+
+        try:
+
+            topic = self.storage.get_by_id("选题库", topic_id)
+
+            if not topic:
+
+                return
+
+
+
+            topic_data = topic.data
+
+            post_url = topic_data.get("帖子文档链接", "")
+
+            script_url = topic_data.get("视频脚本文档链接", "")
+
+
+
+            # 获取修改后的内容
+
+            edited_posts = edit_data.get("修改后的帖子内容", {})
+
+            edited_scripts = edit_data.get("修改后的视频脚本", {})
+
+
+
+            # 追加修改版到帖子文档
+
+            if post_url and edited_posts:
+
+                try:
+
+                    url_str = post_url.get('link', '') if isinstance(post_url, dict) else post_url
+
+                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
+
+                    if doc_id:
+
+                        revision_markdown = self._format_revised_post_document(edited_posts)
+
+                        doc_storage.append_section(doc_id, revision_markdown)
+
+                        print(f"[小改] 已追加修改版到帖子文档")
+
+                except Exception as e:
+
+                    print(f"[小改] 追加修改版到帖子文档失败: {e}")
+
+
+
+            # 追加修改版到脚本文档
+
+            if script_url and edited_scripts:
+
+                try:
+
+                    url_str = script_url.get('link', '') if isinstance(script_url, dict) else script_url
+
+                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
+
+                    if doc_id:
+
+                        revision_markdown = self._format_revised_script_document(edited_scripts)
+
+                        doc_storage.append_section(doc_id, revision_markdown)
+
+                        print(f"[小改] 已追加修改版到脚本文档")
+
+                except Exception as e:
+
+                    print(f"[小改] 追加修改版到脚本文档失败: {e}")
+
+
+
+        except Exception as e:
+
+            print(f"[小改] 写回修改内容失败: {e}")
+
+
+
+    def _format_revised_post_document(self, posts: dict) -> str:
+
+        """格式化修改后的帖子内容为追加章节。"""
+
+        content = "\n\n---\n\n# 修改版（小改修订）\n\n"
+
+        for platform, post in posts.items():
+
+            content += f"## {platform}版本（修订后）\n\n"
+
+            if isinstance(post, dict):
+
+                for key, value in post.items():
+
+                    content += f"**{key}**: {value}\n\n"
+
+            else:
+
+                content += f"{post}\n\n"
+
+        return content
+
+
+
+    def _format_revised_script_document(self, scripts: dict) -> str:
+
+        """格式化修改后的视频脚本为追加章节。"""
+
+        content = "\n\n---\n\n# 修改版（小改修订）\n\n"
+
+        for platform, script in scripts.items():
+
+            content += f"## {platform}版（修订后）\n\n"
+
+            if isinstance(script, dict):
+
+                for key, value in script.items():
+
+                    content += f"**{key}**: {value}\n\n"
+
+            else:
+
+                content += f"{script}\n\n"
 
         return content
 

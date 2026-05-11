@@ -15,6 +15,30 @@ import json
 import time
 
 
+import json
+
+
+def parse_koc_data(raw_koc: dict) -> dict:
+    """解析KOC人设数据，将JSON字段展开为扁平字典。"""
+    if not raw_koc:
+        return {}
+    result = dict(raw_koc)
+    for field in ['基础设定JSON', '语言风格JSON', '内容偏好JSON', '平台策略JSON']:
+        val = raw_koc.get(field, '')
+        if val and isinstance(val, str):
+            try:
+                parsed = json.loads(val)
+                if isinstance(parsed, dict):
+                    for sub_key, sub_val in parsed.items():
+                        result[sub_key] = sub_val
+            except json.JSONDecodeError:
+                pass
+    result['账号名'] = raw_koc.get('人设名称', '')
+    result['KOC名称'] = raw_koc.get('人设名称', '')
+    result['一句话定位'] = raw_koc.get('人设简介', '')
+    return result
+
+
 class BaseAgent(ABC):
     """Agent基类，模板方法模式。
 
@@ -126,8 +150,8 @@ class BaseAgent(ABC):
             output_summary = "Completed"
 
         log_entry = {
-            "id": f"LOG-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{self.name}",
-            "AgentID": getattr(self, 'emp_id', f"EMP-{self.name}"),
+            "id": f"LOG-{datetime.now().strftime('%Y%m%d-%H%M')}-{self.name}",
+            "AgentID": self._get_agent_id(),
             "Agent花名": str(self.name),
             "任务类型": task_type,  # 单选字段，必须是预定义值
             "关联业务ID": related_id if related_id else "",
@@ -143,6 +167,21 @@ class BaseAgent(ABC):
         except Exception as e:
             # 日志写入失败不应影响主流程
             print(f"[警告] {self.name}: 写入Agent协作日志失败: {e}")
+
+    def _get_agent_id(self) -> str:
+        """获取Agent业务ID，匹配Agent花名册。"""
+        agent_id_map = {
+            "TrendScoutAgent": "EMP-001",
+            "TopicCuratorAgent": "EMP-002",
+            "ContentWriterAgent": "EMP-003",
+            "VisualDesignerAgent": "EMP-004",
+            "ScriptWriterAgent": "EMP-005",
+            "ReviewerAgent": "EMP-006",
+            "EditorAgent": "EMP-007",
+            "DistributorAgent": "EMP-008",
+            "AnalystAgent": "EMP-009",
+        }
+        return agent_id_map.get(self.__class__.__name__, f"EMP-{self.name}")
 
     def _get_task_type(self) -> str:
         """获取任务类型，用于Agent协作日志。

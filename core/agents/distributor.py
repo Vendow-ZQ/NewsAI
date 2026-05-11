@@ -98,6 +98,7 @@ class DistributorAgent(BaseAgent):
             # 获取KOC人设
 
             koc = self._load_koc(context.get("koc_id", "KOC-001"))
+            koc = parse_koc_data(koc)
 
 
 

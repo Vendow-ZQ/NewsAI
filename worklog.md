@@ -4,7 +4,139 @@
 
 ---
 
+## 项目总览与一键运行指南
+
+### 项目简介
+
+NewsAI 是一个运行在飞书多维表格上的 AI 虚拟新闻编辑部，由 9 个 AI Agent 组成，7x24 自动采集全球 AI 信息源，转译为中文爆款内容。
+
+### 技术栈
+
+| 组件 | 技术 | 说明 |
+|------|------|------|
+| 编排引擎 | LangGraph | 状态图驱动 9 Agent 协作 |
+| LLM | Doubao 2.0 (火山方舟) | 通过 OpenAI 协议调用 |
+| 存储 | 飞书 Bitable | 7 张多维表格，无外部文档 |
+| SDK | lark-oapi + langchain-openai | 飞书 + LLM 双端对接 |
+
+### 项目文件结构
+
+```
+NewsAI/
+├── bootstrap.py              # 一键初始化：建表 + 种子数据
+├── run.py                    # 主入口：完整流程 / 单Agent调试
+├── pyproject.toml            # 依赖：langgraph, lark-oapi, loguru 等
+├── .env.example              # 环境变量模板（复制为 .env 后填写）
+│
+├── core/                     # 核心业务层
+│   ├── agents/               # 9 个 Agent 实现
+│   │   ├── base.py           # BaseAgent 抽象基类（模板方法模式）
+│   │   ├── trend_scout.py    # 小哨 - 信息采集
+│   │   ├── topic_curator.py  # 小编 - 选题策划
+│   │   ├── content_writer.py # 小文 - 文字编辑
+│   │   ├── visual_designer.py# 小图 - 视觉设计
+│   │   ├── script_writer.py  # 小播 - 短视频编剧
+│   │   ├── reviewer.py       # 小审 - 审核员
+│   │   ├── editor.py         # 小改 - 修改专员
+│   │   ├── distributor.py    # 小发 - 分发策略
+│   │   └── analyst.py        # 小数 - 数据分析师
+│   ├── graph/                # LangGraph 编排
+│   │   ├── builder.py        # 图构建工厂（流程定义）
+│   │   ├── state.py          # 共享 State（支持并发合并）
+│   │   ├── nodes.py          # 9 个节点包装器
+│   │   └── edges.py          # 审改循环条件边
+│   ├── sources/              # 信息源采集（arXiv/HN/GitHub/Reddit/Mock）
+│   ├── llm/                  # LLM 客户端（ChatOpenAI + Mock）
+│   └── utils/                # 工具类（FeishuBaseManager/配置/日志）
+│
+├── feishu_adapter/           # 飞书适配层
+│   ├── feishu_storage.py     # Storage 接口实现
+│   └── base/
+│       ├── tables.py         # 7 张表 Schema + 种子数据
+│       └── id_mapping.py     # 业务ID ↔ record_id 映射
+│
+├── tests/                    # 冒烟测试
+├── mock_data/                # Mock 数据集
+└── docs/                     # 架构文档
+```
+
+### 核心流程图
+
+```
+小哨(采集) → 小编(策划) → [并行] 小文(写作) + 小图(配图) + 小播(脚本)
+                                              ↓
+                        小审(审查) ←→ 小改(修改)  [最多3轮审改循环]
+                                              ↓
+                        小发(分发) → 小数(分析) → END
+```
+
+### 一键跑起来（3步）
+
+**Step 0 - 环境准备**
+```bash
+# 安装依赖
+pip install -e .
+
+# 复制环境变量模板
+copy .env.example .env
+# 编辑 .env 填入：
+#   LARK_APP_ID, LARK_APP_SECRET     (飞书开放平台)
+#   LARK_BASE_APP_TOKEN              (飞书Base URL中的token)
+#   ARK_API_KEY                      (火山方舟)
+```
+
+**Step 1 - 初始化（只需一次）**
+```bash
+python bootstrap.py
+# → 检查环境 → 连接飞书 → 建7张表 → 插入种子数据 → 打印Base链接
+```
+
+**Step 2 - 运行**
+```bash
+python run.py --once              # 跑一轮完整流程
+python run.py --once --topic ID   # 指定选题运行
+python run.py --agent trend       # 单独调试小哨
+python run.py --agent topic       # 单独调试小编
+```
+
+### 7 张 Bitable 表
+
+| 表名 | 用途 | 种子数据 |
+|------|------|----------|
+| 信源配置 | 6+ 信息源的配置 | 8 条 |
+| 热帖库 | 采集到的原始内容 | 9 条 |
+| 选题库 | 小编筛选后的选题 | 运行时生成 |
+| 数据库 | 分发后的数据分析 | 运行时生成 |
+| KOC人设 | 虚拟KOC的人设设定 | 1 条 |
+| Agent花名册 | 9 个Agent的档案 | 9 条 |
+| Agent协作日志 | 执行轨迹记录 | 运行时生成 |
+
+---
+
 ## 日志条目
+
+### 2026-05-11 (项目复盘与启动梳理)
+
+| 时间 | 执行人 | 动作 | 内容 | 变动/结果 |
+|------|--------|------|------|-----------|
+| 20:00 | Claude | 项目全景扫描 | 读取全部190+文件，梳理项目结构 | 完整理解NewsAI架构：9 Agents + LangGraph + Feishu Bitable |
+| 20:10 | Claude | 运行链路梳理 | 确认一键启动方式 | `bootstrap.py` → `run.py --once` 为标准启动链路 |
+| 20:15 | Claude | 更新worklog | 补充项目总结合关键入口文档 | worklog.md新增启动指引汇总 |
+
+**项目核心信息汇总：**
+
+| 维度 | 详情 |
+|------|------|
+| 项目名称 | NewsAI - AI虚拟新闻编辑部 |
+| 技术栈 | LangGraph + Doubao 2.0 + Feishu Bitable |
+| Agent数量 | 9个（小哨/小编/小文/小图/小播/小审/小改/小发/小数）|
+| 核心流程 | 采集 → 策划 → [并行写作/配图/脚本] → 审查 → [审改循环max3轮] → 分发 → 分析 |
+| 存储架构 | Bitable-Only（7张表，无外部文档）|
+| 一键初始化 | `python bootstrap.py` |
+| 一键运行 | `python run.py --once` |
+| 单Agent调试 | `python run.py --agent trend` 等 |
+
+---
 
 ### 2026-05-07 (决赛日)
 

@@ -16,6 +16,7 @@ class NewsAIState:
     """
     current_topic_id: Optional[str] = None
     current_agent: Optional[str] = None
+    koc_id: Optional[str] = "KOC-001"
     revision_count: int = 0
     max_revisions: int = 3
     review_verdict: Optional[str] = None  # "通过" / "需修改"

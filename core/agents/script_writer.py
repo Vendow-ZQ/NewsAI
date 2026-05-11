@@ -49,7 +49,7 @@ from typing import Any
 
 
 
-from core.agents.base import BaseAgent
+from core.agents.base import BaseAgent, parse_koc_data
 
 from core.storage.interface import QueryFilter
 
@@ -102,6 +102,7 @@ class ScriptWriterAgent(BaseAgent):
             koc_record = self.storage.get_by_id("KOC人设", koc_id)
 
             koc = koc_record.data if koc_record else {}
+            koc = parse_koc_data(koc)
 
 
 
@@ -122,6 +123,40 @@ class ScriptWriterAgent(BaseAgent):
                 valid_status = ["生产中", "审改中"]
 
                 topics = [r.data for r in all_records if r.data.get("状态") in valid_status][:10]
+
+
+
+            # 尝试读取帖子文档内容，提取公众号正文供脚本生成参考
+
+            doc_storage = FeishuDocStorage()
+
+            for topic in topics:
+
+                post_url = topic.get("帖子文档链接", "")
+
+                if post_url:
+
+                    try:
+
+                        url_str = post_url.get('link', '') if isinstance(post_url, dict) else post_url
+
+                        doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
+
+                        if doc_id:
+
+                            doc_content = doc_storage.read_doc_content(doc_id)
+
+                            if doc_content:
+
+                                # 提取公众号正文部分（在"## 公众号版本"和"## 小红书版本"之间）
+
+                                topic["帖子文档内容"] = doc_content
+
+                                topic["公众号正文"] = self._extract_wechat_content(doc_content)
+
+                    except Exception as e:
+
+                        print(f"[小播] 读取帖子文档失败: {e}")
 
 
 
@@ -554,6 +589,74 @@ KOC语气：{koc_tone}
 
 
         return content
+
+
+
+    def _extract_wechat_content(self, doc_content: str) -> str:
+
+        """从帖子文档内容中提取公众号正文。"""
+
+        if not doc_content:
+
+            return ""
+
+        # 查找"## 公众号版本"和"## 小红书版本"之间的内容
+
+        start_marker = "## 公众号版本"
+
+        end_marker = "## 小红书版本"
+
+        start_idx = doc_content.find(start_marker)
+
+        if start_idx == -1:
+
+            # 尝试其他可能的标记
+
+            start_marker = "## 公众号"
+
+            start_idx = doc_content.find(start_marker)
+
+        if start_idx == -1:
+
+            # 如果找不到标记，返回前1500字符作为参考
+
+            return doc_content[:1500]
+
+        start_idx += len(start_marker)
+
+        end_idx = doc_content.find(end_marker, start_idx)
+
+        if end_idx == -1:
+
+            end_idx = len(doc_content)
+
+        content = doc_content[start_idx:end_idx].strip()
+
+        # 去掉"**标题**: xxx"、"**摘要**: xxx"等元数据行，只保留正文
+
+        lines = content.split("\n")
+
+        body_lines = []
+
+        for line in lines:
+
+            stripped = line.strip()
+
+            # 跳过元数据行："**标题**: xxx" 或 "**xxx**" 格式
+
+            if stripped.startswith("**") and (": " in stripped or stripped.endswith("**")):
+
+                continue
+
+            # 跳过配图说明等："*配图*: xxx" 格式
+
+            if stripped.startswith("*") and ":" in stripped:
+
+                continue
+
+            body_lines.append(line)
+
+        return "\n".join(body_lines).strip()[:1500]
 
 
 

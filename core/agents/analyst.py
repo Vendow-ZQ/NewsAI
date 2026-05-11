@@ -125,19 +125,23 @@ class AnalystAgent(BaseAgent):
 
 
 
-            # 手动过滤：读取所有已发布选题，然后过滤发布时间超过24小时的
+            # 手动过滤：读取所有已发布选题
 
             all_topics = self.storage.query("选题库", limit=100)
 
 
 
-            # 计算24小时前的时间戳
+            # 如果指定了topic_id（全流程测试模式），跳过24小时限制
 
-            yesterday_ts = int((datetime.now() - timedelta(hours=24)).timestamp() * 1000)
+            is_test_mode = bool(topic_id)
+
+            if not is_test_mode:
+
+                yesterday_ts = int((datetime.now() - timedelta(hours=24)).timestamp() * 1000)
 
 
 
-            # 过滤已发布且发布时间超过24小时的选题
+            # 过滤已发布且未分析过的选题
 
             unanalyzed_topics = []
 
@@ -153,13 +157,21 @@ class AnalystAgent(BaseAgent):
 
                     if not data_id:
 
-                        # 检查发布时间是否超过24小时
+                        if is_test_mode:
 
-                        publish_time = data.get("发布完成时间", 0)
-
-                        if publish_time and int(publish_time) < yesterday_ts:
+                            # 测试模式：不检查发布时间
 
                             unanalyzed_topics.append(data)
+
+                        else:
+
+                            # 正常模式：只分析发布超过24小时的
+
+                            publish_time = data.get("发布完成时间", 0)
+
+                            if publish_time and int(publish_time) < yesterday_ts:
+
+                                unanalyzed_topics.append(data)
 
 
 

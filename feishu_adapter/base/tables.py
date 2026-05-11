@@ -176,6 +176,7 @@ TOPIC_FIELDS: List[Dict[str, Any]] = [
     make_field("生产完成时间", FIELD_TYPE_DATETIME),                # 状态变"审改中"时填
     make_field("发布完成时间", FIELD_TYPE_DATETIME),                # 状态变"已发布"时填
     make_field("帖子文档链接", FIELD_TYPE_URL),                    # 飞书Docx链接 - 小文创建
+    make_field("配图方案文档链接", FIELD_TYPE_URL),                # 飞书Docx链接 - 小图创建
     make_field("视频脚本文档链接", FIELD_TYPE_URL),                # 飞书Docx链接 - 小播创建
     make_field("审改文档链接", FIELD_TYPE_URL),                    # 飞书Docx链接 - 小审/小改维护
     make_field("审改轮次", FIELD_TYPE_NUMBER, required=True),       # 默认0，每轮+1，max 3
@@ -216,6 +217,7 @@ DATA_FIELDS: List[Dict[str, Any]] = [
     make_field("综合评分", FIELD_TYPE_NUMBER, required=True),       # 0-1，小数计算
     make_field("爆点验证", FIELD_TYPE_SINGLE_SELECT, required=True), # 验证成功/部分验证/未爆
     make_field("经验文档链接", FIELD_TYPE_URL),                    # 飞书Docx链接 - 小数创建
+    make_field("数据分析文档链接", FIELD_TYPE_URL),                # 飞书Docx链接 - 小数创建
     make_field("数据采集时间", FIELD_TYPE_DATETIME, required=True), # 自动
     make_field("数据状态", FIELD_TYPE_SINGLE_SELECT, required=True), # 初次采集/已迭代分析/已沉淀经验
 ]

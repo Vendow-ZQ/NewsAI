@@ -55,7 +55,7 @@ from typing import Any
 
 
 
-from core.agents.base import BaseAgent
+from core.agents.base import BaseAgent, parse_koc_data
 
 from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
 
@@ -136,6 +136,7 @@ class ReviewerAgent(BaseAgent):
             # 获取KOC人设
 
             koc = self._load_koc(context.get("koc_id", "KOC-001"))
+            koc = parse_koc_data(koc)
 
 
 
@@ -357,7 +358,7 @@ class ReviewerAgent(BaseAgent):
 
                     review_result["发现的问题"] = []
 
-                    print(f"[小审] 选题 {topic.get('选题标题', '')[:20]}... 已达到第2轮审查，强制通过（演示模式）")
+                    print(f"[小审] 选题 {topic.get('选题标题', '')[:20]}... 已达到第3轮审查，强制通过（演示模式）")
 
 
 

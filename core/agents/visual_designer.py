@@ -57,9 +57,10 @@ from typing import Any
 
 
 
-from core.agents.base import BaseAgent
+from core.agents.base import BaseAgent, parse_koc_data
 
 from core.storage.interface import QueryFilter
+from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
 
 
 
@@ -108,6 +109,7 @@ class VisualDesignerAgent(BaseAgent):
             koc_record = self.storage.get_by_id("KOC人设", koc_id)
 
             koc = koc_record.data if koc_record else {}
+            koc = parse_koc_data(koc)
 
 
 
@@ -121,13 +123,13 @@ class VisualDesignerAgent(BaseAgent):
 
             else:
 
-                # 查询所有"已选"状态的选题（小编创建后的状态）
+                # 查询"已选"或"生产中"状态的选题（兼容小文提前改状态的情况）
 
-                filters = [QueryFilter(field="状态", operator="eq", value="已选")]
+                all_records = self.storage.query("选题库", limit=100)
 
-                records = self.storage.query("选题库", filters=filters, limit=10)
+                valid_status = ["已选", "生产中"]
 
-                topics = [r.data for r in records]
+                topics = [r.data for r in all_records if r.data.get("状态") in valid_status][:10]
 
 
 
@@ -370,50 +372,51 @@ KOC视觉风格偏好：{koc_style}
 
 
     def _write_storage(self, context: dict, result: dict):
-
-        """将配图方案写入选题库。
-
-
-
-        更新选题库中对应选题的"配图方案"字段。
-
-        """
-
+        """将配图方案写入配图方案文档，并返还文档链接到选题库。"""
         designs = result.get("designs", [])
-
-
+        doc_storage = FeishuDocStorage()
+        date_str = datetime.now().strftime("%Y%m%d")
 
         for design in designs:
-
             topic_id = design.get("topic_id")
-
             if not topic_id:
-
                 continue
 
-
-
-            update_data = {
-
-                "配图方案": json.dumps(design.get("配图方案", []), ensure_ascii=False),
-
-                "视觉风格": design.get("视觉风格", ""),
-
-                "配图更新时间": int(datetime.now().timestamp() * 1000),
-
-            }
-
-
-
             try:
+                # 检查是否已有配图方案文档
+                existing = self.storage.get_by_id("选题库", topic_id)
+                existing_url = existing.data.get("配图方案文档链接", "") if existing else ""
+
+                if existing_url:
+                    url_str = existing_url.get('link', '') if isinstance(existing_url, dict) else existing_url
+                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
+                else:
+                    # 创建新文档
+                    topic_title = design.get("topic_title", "配图方案")
+                    doc_title = f"[配图] {date_str} {topic_title}"
+                    doc_id = doc_storage.create_doc(doc_title)
+
+                # 构建配图方案文档内容
+                design_markdown = self._format_design_document(design)
+                doc_storage.append_section(doc_id, design_markdown)
+
+                # 设置权限并获取链接
+                doc_storage.set_permissions(doc_id, share_type="tenant_readable")
+                doc_url = doc_storage.get_share_url(doc_id)
+
+                update_data = {
+                    "配图方案文档链接": doc_url,
+                    "配图方案": json.dumps(design.get("配图方案", []), ensure_ascii=False),
+                    "视觉风格": design.get("视觉风格", ""),
+                    "配图更新时间": int(datetime.now().timestamp() * 1000),
+                }
 
                 self.storage.update("选题库", topic_id, update_data)
-
-                print(f"[小图] 已更新选题 {topic_id} 的配图方案")
+                print(f"[小图] 已更新配图方案文档: {design.get('topic_title', '')[:30]}...")
+                print(f"[小图] 文档链接: {doc_url}")
 
             except Exception as e:
-
-                print(f"[小图] 更新选题 {topic_id} 失败: {e}")
+                print(f"[小图] 更新配图方案失败: {e}")
 
 
 
