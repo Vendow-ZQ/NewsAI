@@ -98,8 +98,11 @@ class FeishuStorage(Storage):
 
         # 生成或使用提供的业务ID
         if record_id is None:
-            prefix = self._get_prefix(table)
-            record_id = IDGenerator.generate(prefix)
+            # 优先从data中获取已有的id字段
+            record_id = data.get("id")
+            if not record_id:
+                prefix = self._get_prefix(table)
+                record_id = IDGenerator.generate(prefix)
 
         # 准备字段数据
         fields = dict(data)
