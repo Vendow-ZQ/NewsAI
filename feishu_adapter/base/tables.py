@@ -32,13 +32,23 @@ FIELD_TYPE_URL = 15          # 超链接
 FIELD_TYPE_DOCUMENT = 22     # 文档（富文本）
 
 
-def make_field(name: str, field_type: int, required: bool = False) -> Dict[str, Any]:
-    """创建字段定义"""
-    return {
+def make_field(name: str, field_type: int, required: bool = False, options: List[str] = None) -> Dict[str, Any]:
+    """创建字段定义
+
+    Args:
+        name: 字段名称
+        field_type: 字段类型（使用FIELD_TYPE_常量）
+        required: 是否必填
+        options: 单选/多选字段的选项值列表
+    """
+    field = {
         "name": name,
         "type": field_type,
         "required": required
     }
+    if options:
+        field["options"] = options
+    return field
 
 
 # =============================================================================
@@ -48,8 +58,10 @@ def make_field(name: str, field_type: int, required: bool = False) -> Dict[str, 
 SOURCE_CONFIG_FIELDS: List[Dict[str, Any]] = [
     make_field("id", FIELD_TYPE_TEXT, required=True),
     make_field("信源名称", FIELD_TYPE_TEXT, required=True),
-    make_field("平台", FIELD_TYPE_SINGLE_SELECT, required=True),
-    make_field("类型", FIELD_TYPE_SINGLE_SELECT, required=True),
+    make_field("平台", FIELD_TYPE_SINGLE_SELECT, required=True,
+               options=["arXiv", "HackerNews", "GitHub", "Reddit", "X", "小红书", "抖音"]),
+    make_field("类型", FIELD_TYPE_SINGLE_SELECT, required=True,
+               options=["真实爬虫", "Mock数据"]),
     make_field("配置JSON", FIELD_TYPE_TEXT, required=True),
     make_field("每次抓取上限", FIELD_TYPE_NUMBER, required=True),
     make_field("是否启用", FIELD_TYPE_CHECKBOX, required=True),
@@ -149,15 +161,18 @@ TREND_FIELDS: List[Dict[str, Any]] = [
     make_field("标题", FIELD_TYPE_TEXT, required=True),
     make_field("原文链接", FIELD_TYPE_URL, required=True),
     make_field("原文摘要", FIELD_TYPE_TEXT, required=True),
-    make_field("原文语言", FIELD_TYPE_SINGLE_SELECT, required=True),
+    make_field("原文语言", FIELD_TYPE_SINGLE_SELECT, required=True,
+               options=["中文", "英文", "其他"]),
     make_field("主题标签", FIELD_TYPE_MULTI_SELECT, required=True),
     make_field("阅览量", FIELD_TYPE_NUMBER),
     make_field("互动量", FIELD_TYPE_NUMBER),
     make_field("发布时间", FIELD_TYPE_DATETIME, required=True),
     make_field("抓取时间", FIELD_TYPE_DATETIME, required=True),
     make_field("热度评分", FIELD_TYPE_NUMBER, required=True),
-    make_field("内容质量", FIELD_TYPE_SINGLE_SELECT, required=True),
-    make_field("状态", FIELD_TYPE_SINGLE_SELECT, required=True),
+    make_field("内容质量", FIELD_TYPE_SINGLE_SELECT, required=True,
+               options=["高", "中", "低"]),
+    make_field("状态", FIELD_TYPE_SINGLE_SELECT, required=True,
+               options=["待选", "已选", "已弃"]),
 ]
 
 
@@ -175,7 +190,8 @@ TOPIC_FIELDS: List[Dict[str, Any]] = [
     make_field("选题角度", FIELD_TYPE_TEXT, required=True),
     make_field("预估爆点", FIELD_TYPE_TEXT, required=True),
     make_field("预估受众", FIELD_TYPE_TEXT, required=True),
-    make_field("钩子类型", FIELD_TYPE_SINGLE_SELECT, required=True),
+    make_field("钩子类型", FIELD_TYPE_SINGLE_SELECT, required=True,
+               options=["数字", "反差", "提问", "身份代入", "时效"]),
     make_field("推荐优先级", FIELD_TYPE_NUMBER, required=True),
 
     # === 关联字段 ===
@@ -184,7 +200,8 @@ TOPIC_FIELDS: List[Dict[str, Any]] = [
     make_field("关联资产ID", FIELD_TYPE_TEXT),
 
     # === 状态字段（v3 核心）===
-    make_field("选题状态", FIELD_TYPE_SINGLE_SELECT, required=True),
+    make_field("选题状态", FIELD_TYPE_SINGLE_SELECT, required=True,
+               options=["待选择", "已选中", "生产中", "审改中", "分发中", "已发布", "已弃"]),
 
     # === 时间戳 ===
     make_field("创建时间", FIELD_TYPE_DATETIME, required=True),
@@ -192,7 +209,8 @@ TOPIC_FIELDS: List[Dict[str, Any]] = [
     make_field("发布完成时间", FIELD_TYPE_DATETIME),
 
     # === 创建者 + 数据回流 ===
-    make_field("创建者Agent", FIELD_TYPE_SINGLE_SELECT, required=True),
+    make_field("创建者Agent", FIELD_TYPE_SINGLE_SELECT, required=True,
+               options=["小编 TopicCurator"]),
     make_field("数据回流ID", FIELD_TYPE_TEXT),
 ]
 
@@ -209,11 +227,16 @@ ASSET_FIELDS: List[Dict[str, Any]] = [
     make_field("选题标题", FIELD_TYPE_TEXT),
 
     # === 生产流水状态（v3 核心）===
-    make_field("文案状态", FIELD_TYPE_SINGLE_SELECT),
-    make_field("配图状态", FIELD_TYPE_SINGLE_SELECT),
-    make_field("视频状态", FIELD_TYPE_SINGLE_SELECT),
-    make_field("审改状态", FIELD_TYPE_SINGLE_SELECT),
-    make_field("分发状态", FIELD_TYPE_SINGLE_SELECT),
+    make_field("文案状态", FIELD_TYPE_SINGLE_SELECT,
+               options=["未开始", "生产中", "已完成"]),
+    make_field("配图状态", FIELD_TYPE_SINGLE_SELECT,
+               options=["未开始", "生产中", "已完成"]),
+    make_field("视频状态", FIELD_TYPE_SINGLE_SELECT,
+               options=["未开始", "生产中", "已完成"]),
+    make_field("审改状态", FIELD_TYPE_SINGLE_SELECT,
+               options=["未开始", "第1轮审改中", "第2轮审改中", "第3轮审改中", "已通过", "已强制通过", "卡死"]),
+    make_field("分发状态", FIELD_TYPE_SINGLE_SELECT,
+               options=["未开始", "生产中", "已生成"]),
 
     # === 内容资产文档链接 ===
     make_field("文案文档链接", FIELD_TYPE_URL),
@@ -266,11 +289,13 @@ DATA_FIELDS: List[Dict[str, Any]] = [
     make_field("B站_点赞数", FIELD_TYPE_NUMBER),
     make_field("B站_投币数", FIELD_TYPE_NUMBER),
     make_field("综合评分", FIELD_TYPE_NUMBER, required=True),
-    make_field("爆点验证", FIELD_TYPE_SINGLE_SELECT, required=True),
+    make_field("爆点验证", FIELD_TYPE_SINGLE_SELECT, required=True,
+               options=["验证成功", "部分验证", "未爆"]),
     make_field("经验文档链接", FIELD_TYPE_URL),
     make_field("数据分析文档链接", FIELD_TYPE_URL),
     make_field("数据采集时间", FIELD_TYPE_DATETIME, required=True),
-    make_field("数据状态", FIELD_TYPE_SINGLE_SELECT, required=True),
+    make_field("数据状态", FIELD_TYPE_SINGLE_SELECT, required=True,
+               options=["待分析", "已分析", "已归档"]),
 ]
 
 
@@ -313,7 +338,8 @@ EMP_FIELDS: List[Dict[str, Any]] = [
     make_field("id", FIELD_TYPE_TEXT, required=True),
     make_field("花名", FIELD_TYPE_TEXT, required=True),
     make_field("英文代号", FIELD_TYPE_TEXT, required=True),
-    make_field("部门", FIELD_TYPE_SINGLE_SELECT, required=True),
+    make_field("部门", FIELD_TYPE_SINGLE_SELECT, required=True,
+               options=["信息组", "决策组", "生产组", "治理组", "复盘"]),
     make_field("职责描述", FIELD_TYPE_TEXT, required=True),
     make_field("输入", FIELD_TYPE_TEXT, required=True),
     make_field("输出", FIELD_TYPE_TEXT, required=True),
@@ -344,11 +370,13 @@ LOG_FIELDS: List[Dict[str, Any]] = [
     make_field("id", FIELD_TYPE_TEXT, required=True),
     make_field("AgentID", FIELD_TYPE_TEXT, required=True),
     make_field("Agent花名", FIELD_TYPE_TEXT, required=True),
-    make_field("任务类型", FIELD_TYPE_SINGLE_SELECT, required=True),
+    make_field("任务类型", FIELD_TYPE_SINGLE_SELECT, required=True,
+               options=["信息采集", "选题策划", "内容撰写", "视觉设计", "脚本编写", "内容审核", "内容修改", "分发计划", "数据分析"]),
     make_field("关联业务ID", FIELD_TYPE_TEXT),
     make_field("输入摘要", FIELD_TYPE_TEXT, required=True),
     make_field("输出摘要", FIELD_TYPE_TEXT, required=True),
-    make_field("执行状态", FIELD_TYPE_SINGLE_SELECT, required=True),
+    make_field("执行状态", FIELD_TYPE_SINGLE_SELECT, required=True,
+               options=["成功", "失败", "进行中", "已取消"]),
     make_field("耗时秒数", FIELD_TYPE_NUMBER),
     make_field("Token消耗", FIELD_TYPE_NUMBER),
     make_field("错误信息", FIELD_TYPE_TEXT),
