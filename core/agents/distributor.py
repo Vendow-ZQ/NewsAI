@@ -409,7 +409,8 @@ B站竖屏（视频）：
 
         for platform_name, field_name in platforms_map.items():
             content = platform_versions.get(platform_name, {})
-            if not content:
+            if not content or not isinstance(content, dict):
+                print(f"[小发] 警告: {platform_name} 内容为空或格式错误，跳过")
                 continue
             try:
                 from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
@@ -454,9 +455,16 @@ B站竖屏（视频）：
 
         result["doc_urls"] = doc_urls
 
-    def _format_platform_doc(self, platform_name: str, content: dict,
+    def _format_platform_doc(self, platform_name: str, content,
                              distribution_plan: dict) -> str:
         """格式化平台分发文档"""
+        # 防御性处理：确保 content 是字典
+        if isinstance(content, str):
+            # 如果 content 是字符串，包装成字典
+            content = {"正文": content, "标题": "未命名"}
+        elif not isinstance(content, dict):
+            content = {}
+
         md = f"# [{platform_name}] {content.get('标题', '')}\n\n"
 
         # 各平台格式
