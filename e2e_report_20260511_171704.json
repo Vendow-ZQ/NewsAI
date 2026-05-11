@@ -1,0 +1,107 @@
+{
+  "start_time": "2026-05-11T17:14:21.613665",
+  "agents": [
+    {
+      "agent": "小哨",
+      "status": "PASS",
+      "detail": "写入 0 条热帖",
+      "elapsed": 79.37,
+      "timestamp": "2026-05-11T17:15:41.720303"
+    },
+    {
+      "agent": "小编",
+      "status": "PASS",
+      "detail": "生成 3 条选题，选中 TOPIC-20260511-001, ASSET ASSET-20260511-001",
+      "elapsed": 70.47,
+      "timestamp": "2026-05-11T17:16:52.185725"
+    },
+    {
+      "agent": "小文",
+      "status": "FAIL",
+      "detail": "没有'已选中'状态的选题",
+      "elapsed": 1.77,
+      "timestamp": "2026-05-11T17:16:53.958113"
+    },
+    {
+      "agent": "小图",
+      "status": "FAIL",
+      "detail": "没有活跃选题",
+      "elapsed": 1.6,
+      "timestamp": "2026-05-11T17:16:55.560104"
+    },
+    {
+      "agent": "小播",
+      "status": "FAIL",
+      "detail": "没有活跃选题",
+      "elapsed": 1.87,
+      "timestamp": "2026-05-11T17:16:57.429581"
+    },
+    {
+      "agent": "production_sync",
+      "status": "PASS",
+      "detail": "检查 3 状态",
+      "elapsed": 0.98,
+      "timestamp": "2026-05-11T17:16:58.413468"
+    },
+    {
+      "agent": "小审",
+      "status": "FAIL",
+      "detail": "没有待审查的选题",
+      "elapsed": 1.67,
+      "timestamp": "2026-05-11T17:17:00.086809"
+    },
+    {
+      "agent": "小发",
+      "status": "FAIL",
+      "detail": "没有分发中的选题",
+      "elapsed": 2.14,
+      "timestamp": "2026-05-11T17:17:02.227253"
+    },
+    {
+      "agent": "小数",
+      "status": "FAIL",
+      "detail": "没有已发布的选题",
+      "elapsed": 2.09,
+      "timestamp": "2026-05-11T17:17:04.318072"
+    }
+  ],
+  "total_time": 161.99,
+  "bugs": [
+    {
+      "agent": "小文",
+      "severity": "P1",
+      "description": "没有'已选中'状态的选题",
+      "timestamp": "2026-05-11T17:16:53.958124"
+    },
+    {
+      "agent": "小图",
+      "severity": "P1",
+      "description": "没有活跃选题",
+      "timestamp": "2026-05-11T17:16:55.560116"
+    },
+    {
+      "agent": "小播",
+      "severity": "P1",
+      "description": "没有活跃选题",
+      "timestamp": "2026-05-11T17:16:57.429604"
+    },
+    {
+      "agent": "小审",
+      "severity": "P1",
+      "description": "没有待审查的选题",
+      "timestamp": "2026-05-11T17:17:00.086828"
+    },
+    {
+      "agent": "小发",
+      "severity": "P1",
+      "description": "没有分发中的选题",
+      "timestamp": "2026-05-11T17:17:02.227265"
+    },
+    {
+      "agent": "小数",
+      "severity": "P1",
+      "description": "没有已发布的选题",
+      "timestamp": "2026-05-11T17:17:04.318088"
+    }
+  ]
+}

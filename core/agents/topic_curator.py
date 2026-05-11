@@ -99,8 +99,13 @@ class TopicCuratorAgent(BaseAgent):
 
         thinking, answer, raw = invoke_with_retry(self.llm, messages, max_retries=3)
 
-        # v3 校验：必须有 3 条候选
-        candidates = answer.get("candidates", [])
+        # 防御：LLM 可能返回 list 或 dict
+        if isinstance(answer, list):
+            candidates = answer
+        elif isinstance(answer, dict):
+            candidates = answer.get("candidates", [])
+        else:
+            candidates = []
         if len(candidates) != 3:
             raise RuntimeError(
                 f"小编必须输出 3 条候选，实际输出 {len(candidates)} 条"

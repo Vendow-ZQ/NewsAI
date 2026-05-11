@@ -230,18 +230,29 @@ class TrendScoutAgent(BaseAgent):
             })
 
             trend_id = IDGenerator.generate("TREND")
+
+            # 处理发布时间：字符串 → 毫秒时间戳
+            pub_time_raw = post.get("发布时间", "")
+            pub_ts = current_timestamp_ms()  # 默认当前时间
+            if pub_time_raw and isinstance(pub_time_raw, str):
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(pub_time_raw.replace('Z', '+00:00').replace('/', '-'))
+                    pub_ts = int(dt.timestamp() * 1000)
+                except Exception:
+                    pass
+
             record = {
                 "id": trend_id,
                 "信源ID": post.get("_source_file", "unknown"),
                 "信源平台": _extract_platform(post),
                 "标题": post.get("标题", post.get("name", post.get("repo", "无标题"))),
-                "原文链接": post.get("链接", post.get("url", "")),
                 "原文摘要": post.get("摘要", post.get("内容摘要", post.get("description", "")))[:500],
                 "原文语言": _detect_language(post),
                 "主题标签": evaluation.get("主题标签", ["其他"]),
                 "阅览量": post.get("阅览量", post.get("views", 0)),
                 "互动量": post.get("互动量", post.get("stars", post.get("upvotes", 0))),
-                "发布时间": post.get("发布时间", ""),
+                "发布时间": pub_ts,
                 "抓取时间": current_timestamp_ms(),
                 "热度评分": evaluation.get("热度评分", 0.5),
                 "内容质量": evaluation.get("内容质量", "中"),
