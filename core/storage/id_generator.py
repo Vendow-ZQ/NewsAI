@@ -66,6 +66,7 @@ TABLE_PREFIXES = {
     "信源配置": "SRC",
     "热帖库": "TREND",
     "选题库": "TOPIC",
+    "内容资产库": "ASSET",
     "数据库": "DATA",
     "KOC人设": "KOC",
     "Agent花名册": "EMP",

@@ -8,8 +8,6 @@ from core.agents.topic_curator import TopicCuratorAgent
 from core.agents.content_writer import ContentWriterAgent
 from core.agents.visual_designer import VisualDesignerAgent
 from core.agents.script_writer import ScriptWriterAgent
-from core.agents.reviewer import ReviewerAgent
-from core.agents.distributor import DistributorAgent
 
 
 def _make_log(agent: str, status: str, **kwargs) -> list:
@@ -17,12 +15,13 @@ def _make_log(agent: str, status: str, **kwargs) -> list:
     return [{"agent": agent, "status": status, **kwargs}]
 
 
-# 小哨节点
 def _agent_context(state: NewsAIState) -> dict:
-    """构建Agent执行上下文，统一传递topic_id和koc_id。"""
+    """构建Agent执行上下文，统一传递topic_id和asset_id。"""
     ctx = {}
     if state.current_topic_id:
         ctx["topic_id"] = state.current_topic_id
+    if state.current_asset_id:
+        ctx["asset_id"] = state.current_asset_id
     if state.koc_id:
         ctx["koc_id"] = state.koc_id
     return ctx
@@ -48,7 +47,14 @@ def create_topic_curator_node(storage: Any, llm: Any):
         try:
             agent = TopicCuratorAgent(storage, llm)
             result = agent.execute(_agent_context(state))
-            return {"execution_log": _make_log("小编", "完成", result=result)}
+            # 更新 state：选中 topic_id 和 asset_id
+            topic_id = result.get("selected_topic_id")
+            asset_id = result.get("asset_id")
+            return {
+                "execution_log": _make_log("小编", "完成", result=result),
+                "current_topic_id": topic_id,
+                "current_asset_id": asset_id,
+            }
         except Exception as e:
             return {"execution_log": _make_log("小编", "失败", error=str(e)), "errors": [str(e)]}
     return node
@@ -90,6 +96,53 @@ def create_script_writer_node(storage: Any, llm: Any):
             return {"execution_log": _make_log("小播", "完成", result=result)}
         except Exception as e:
             return {"execution_log": _make_log("小播", "失败", error=str(e)), "errors": [str(e)]}
+    return node
+
+
+# production_sync 节点（v3 新增）
+def create_production_sync_node(storage: Any, llm: Any):
+    """创建 production_sync 节点（生产组状态同步）。
+
+    检查 ASSET 表中 3 个生产状态是否都为"已完成"。
+    如果是，更新 TOPIC 状态为"审改中"，ASSET 生产完成时间。
+    """
+    def node(state: NewsAIState) -> Dict[str, Any]:
+        try:
+            asset_id = state.current_asset_id
+            if not asset_id:
+                return {"execution_log": _make_log("production_sync", "跳过", reason="无 asset_id")}
+
+            # 读取 ASSET 记录
+            asset = storage.get_by_id("内容资产库", asset_id)
+            if not asset:
+                return {"execution_log": _make_log("production_sync", "失败", reason="ASSET 不存在")}
+
+            asset_data = asset.data
+            text_status = asset_data.get("文案状态", "")
+            image_status = asset_data.get("配图状态", "")
+            video_status = asset_data.get("视频状态", "")
+
+            all_done = (text_status == "已完成" and image_status == "已完成" and video_status == "已完成")
+
+            if all_done:
+                from core.agents.base import current_timestamp_ms
+                # 更新 ASSET
+                storage.update("内容资产库", asset_id, {
+                    "生产完成时间": current_timestamp_ms(),
+                })
+                # 更新 TOPIC
+                topic_id = state.current_topic_id
+                if topic_id:
+                    storage.update("选题库", topic_id, {
+                        "选题状态": "审改中",
+                    })
+                print(f"[production_sync] 3 个生产状态全完成，触发审改阶段")
+                return {"execution_log": _make_log("production_sync", "完成", all_done=True)}
+            else:
+                print(f"[production_sync] 等待中: 文案={text_status}, 配图={image_status}, 视频={video_status}")
+                return {"execution_log": _make_log("production_sync", "等待", all_done=False)}
+        except Exception as e:
+            return {"execution_log": _make_log("production_sync", "失败", error=str(e)), "errors": [str(e)]}
     return node
 
 
