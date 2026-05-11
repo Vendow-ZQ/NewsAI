@@ -119,9 +119,20 @@ class DistributorAgent(BaseAgent):
 
     def _read_doc_contents(self, asset: dict) -> dict:
         """读取 3 件资产文档内容"""
-        from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
-        doc_storage = FeishuDocStorage()
         contents = {}
+
+        # 尝试初始化文档存储
+        try:
+            from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
+            doc_storage = FeishuDocStorage()
+        except Exception as e:
+            print(f"[小发] 文档存储初始化失败: {e}")
+            # 返回空内容，让LLM基于已有信息生成
+            return {
+                "long_form_doc": "",
+                "image_pool_doc": "",
+                "script_doc": "",
+            }
 
         for field, key in [
             ("文案文档链接", "long_form_doc"),
@@ -136,6 +147,10 @@ class DistributorAgent(BaseAgent):
                     if doc_id:
                         content = doc_storage.read_doc_content(doc_id)
                         contents[key] = content[:2000] if content else ""
+                        if not content:
+                            print(f"[小发] 警告: {field} 内容为空")
+                        else:
+                            print(f"[小发] 读取 {field}: {len(contents[key])} 字")
                 except Exception as e:
                     print(f"[小发] 读取 {field} 失败: {e}")
                     contents[key] = ""
@@ -203,6 +218,11 @@ class DistributorAgent(BaseAgent):
     def _build_step1_prompt(self, koc_block: str, topic: dict,
                             long_form: str, image_pool: str, script: str) -> str:
         """构建步骤 1 prompt"""
+        # 如果文档为空，提供基于选题的备用内容
+        long_form_text = long_form[:1500] if long_form else f"[选题角度: {topic.get('选题角度', '')}]\n[预估爆点: {topic.get('预估爆点', '')}]"
+        image_pool_text = image_pool[:1000] if image_pool else "[图素材池: 建议生成封面图 + 正文配图 + 总结图]"
+        script_text = script[:1000] if script else "[视频脚本: 建议1-3分钟，包含钩子开场 + 核心内容 + CTA]"
+
         return f"""\
 {koc_block}
 
@@ -211,17 +231,19 @@ class DistributorAgent(BaseAgent):
 <input>
 选题 ID：{topic.get('id', '')}
 选题标题：{topic.get('选题标题', '')}
+选题角度：{topic.get('选题角度', '')}
+预估爆点：{topic.get('预估爆点', '')}
 
 【3 件资产终稿】
 
 === 长文终版 ===
-{long_form[:1500] if long_form else '（长文尚未生成）'}
+{long_form_text}
 
 === 图素材池（5-8 张图）===
-{image_pool[:1000] if image_pool else '（素材池尚未生成）'}
+{image_pool_text}
 
 === 视频脚本主版（含镜头清单）===
-{script[:1000] if script else '（脚本尚未生成）'}
+{script_text}
 </input>
 
 <rules>
@@ -260,6 +282,36 @@ B站竖屏（视频）：
 【视频剪辑指引】
 - 抖音剪辑：从主脚本保留哪些镜头
 - 视频号/B站：用全脚本
+
+【重要：输出 JSON 格式】
+{{
+  "公众号": {{
+    "标题": "...",
+    "正文": "...",
+    "字数": 2000,
+    "配图绑定": ["图1", "图2", "图3"]
+  }},
+  "小红书": {{
+    "标题": "...",
+    "正文": "...",
+    "标签": ["标签1", "标签2"],
+    "配图绑定": ["图1", "图2", "图3", "图4"]
+  }},
+  "抖音": {{
+    "口播文案": "...",
+    "封面图": "图1",
+    "剪辑指引": "保留镜头..."
+  }},
+  "视频号": {{
+    "描述": "...",
+    "封面图": "图1"
+  }},
+  "B站竖屏": {{
+    "标题": "...",
+    "简介": "...",
+    "封面图": "图1"
+  }}
+}}
 </rules>
 
 <self_check>
@@ -271,6 +323,7 @@ B站竖屏（视频）：
 □ 每个平台都有配图绑定和封面图选择
 □ 抖音/视频号/B站 都有剪辑指引
 □ 全程用"咱们/我们"，没有焦虑话术
+□ 输出是有效的 JSON 格式
 </self_check>
 
 现在开始处理。
