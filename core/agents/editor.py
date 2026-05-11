@@ -1,888 +1,308 @@
-# -*- coding: utf-8 -*-
-"""Agent module."""
+"""小改 Editor - 修改 Agent (EMP-007)。
 
-SYSTEM_PROMPT = """
-
-\
-
-<role>
-
-你是「小改 Editor」，NewsAI 编辑部的修改专员，治理组成员。
-
-你不做创作，你只做精确修改。
-
-
-
-你的工作是：读小审的审查意见，逐条精确修改帖子和脚本副本，
-
-输出清晰的 changelog（diff 形式）。
-
-</role>
-
-
-
-<workflow>
-
-1. 读 <input>：原稿 + 小审的 issues 列表
-
-2. 在 <thinking> 里：
-
-   - 逐条 issue 设计修改方案
-
-   - 检查修改是否会引入新问题
-
-3. 在 <answer> 输出 changelog + 修改后的内容
-
-</workflow>
-
-
-
-<output_format>
-
-先在 <thinking>...</thinking>，然后 <answer>{...}</answer>。
-
-</output_format>
-
-
-
-<critical>
-
-你不重写内容！你只修改小审指出的具体位置！
-
-其他部分原文保留！
-
-</critical>
-
+v3.0 改造：
+- 改审改文档副本（不动原始文档）
+- changelog 不能为空（v3 修复 Bug 4）
+- dispute_review 字段
+- 连续 3 次 dispute → 卡死
 """
 
 import json
-
 from datetime import datetime
-
 from typing import Any
 
-
-
-from core.agents.base import BaseAgent
-
-from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
-
-
-
+from core.agents.base import BaseAgent, current_timestamp_ms, parse_koc_data
+from core.prompts.shared.koc_persona import render_koc_block
+from core.storage.id_generator import IDGenerator
+from core.utils.llm_output_parser import LLMOutputError, invoke_with_retry
 
 
 class EditorAgent(BaseAgent):
+    """小改 EMP-007 · 修改专员"""
 
-    """小改 Editor - 编辑。
+    name = "小改"
+    english_name = "Editor"
+    emoji = "🛠️"
 
+    SYSTEM_PROMPT = """\
+<role>
+你是「小改 Editor」，NewsAI 编辑部的修改专员，治理组成员。
+你不做创作，只做精确修改。
 
+⚠️ 重要：你改的是「审改文档」（小审创建的副本），不动原始的小文/小图/小播文档。
+原稿一次过原则。
 
-    负责根据审改意见修改内容，优化质量。
+你的工作是：读小审的审查意见，逐条精确修改审改副本，输出清晰的 changelog（diff 形式）。
+</role>
 
-    """
+<workflow>
+1. 读 <input>：审改文档（含小审最新审查意见 + 上一轮的副本内容）
+2. 在 <thinking> 里：
+   - 逐条 issue 设计修改方案
+   - 检查修改是否引入新问题
+3. 在 <answer> 输出 changelog + 修改后的内容
+</workflow>
 
+<output_format>
+先 <thinking>...</thinking>（≤300字），然后 <answer>{JSON}</answer>。
 
-
-    def __init__(self, storage: Any, llm_client: Any):
-
-        super().__init__("小改", storage, llm_client)
-
-
+⚠️ changelog 列表必须非空。如果你认为不需要任何修改，输出空 changelog 是错误的——
+这种情况意味着你应该向小审反馈"原稿其实没问题"，而不是绕过修改。
+</output_format>
+"""
 
     def _read_upstream(self, context: dict) -> dict:
-
-        """读取选题库中"审改中"状态的选题。
-
-
-
-        从"选题库"表中读取状态为"审改中"的选题，
-
-        并读取相关的审改记录。
-
-        """
-
+        """读 KOC + TOPIC + ASSET + 审改文档"""
         try:
+            koc_record = self.storage.get_by_id("KOC人设", "KOC-001")
+            koc = parse_koc_data(koc_record.data) if koc_record else {}
 
-            from core.storage.interface import QueryFilter
+            # 读"审改中"状态的选题
+            topics = self.storage.query("选题库", limit=10)
+            review_topics = [t.data for t in topics if t.data.get("选题状态") == "审改中"]
+            if not review_topics:
+                raise RuntimeError("没有审改中的选题")
+            topic = review_topics[0]
 
+            # 读 ASSET
+            asset_id = topic.get("关联资产ID", "")
+            asset = None
+            if asset_id:
+                asset_record = self.storage.get_by_id("内容资产库", asset_id)
+                asset = asset_record.data if asset_record else {}
 
+            if not asset:
+                raise RuntimeError(f"ASSET {asset_id} 不存在")
 
-            # 读取审改中的选题（手动过滤避免QueryFilter问题）
+            # 当前审改轮次
+            revision_count = asset.get("审改轮次", 0)
 
-            all_topics = self.storage.query("选题库", limit=100)
-
-            topics = [t for t in all_topics if t.data.get("状态") == "审改中"][:10]
-
-
-
-            # 获取KOC人设
-
-            koc = self._load_koc(context.get("koc_id", "KOC-001"))
-            koc = parse_koc_data(koc)
-
-
+            # 读审改文档内容
+            audit_doc = ""
+            audit_url = asset.get("审改文档链接", "")
+            if audit_url:
+                try:
+                    from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
+                    doc_storage = FeishuDocStorage()
+                    url_str = audit_url.get("link", "") if isinstance(audit_url, dict) else audit_url
+                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ""
+                    if doc_id:
+                        audit_doc = doc_storage.read_doc_content(doc_id) or ""
+                except Exception as e:
+                    print(f"[小改] 读取审改文档失败: {e}")
 
             return {
-
-                "topics": [t.data for t in topics],
-
-                "koc": koc
-
+                "koc": koc,
+                "topic": topic,
+                "asset": asset,
+                "revision_count": revision_count,
+                "audit_doc": audit_doc,
             }
-
         except Exception as e:
-
-            print(f"[小改] 读取选题库失败: {e}")
-
-            return {"topics": [], "koc": {}}
-
-
-
-    def _load_koc(self, koc_id: str) -> dict:
-
-        """加载KOC人设。"""
-
-        try:
-
-            record = self.storage.get_by_id("KOC人设", koc_id)
-
-            return record.data if record else {}
-
-        except Exception as e:
-
-            print(f"[小改] 加载KOC人设失败: {e}")
-
-            return {}
-
-
+            print(f"[小改] 读取上游数据失败: {e}")
+            raise
 
     def _invoke_tools(self, context: dict, upstream_data: dict) -> dict:
-
-        """小改不需要调用外部工具，直接返回空结果。"""
-
+        """小改不需要外部工具"""
         return {}
 
-
-
     def _invoke_llm(self, context: dict, upstream_data: dict, tool_results: dict) -> dict:
-
-        """LLM修改内容。
-
-
-
-        对每个选题，根据审改记录中的意见进行修改：
-
-        - 分析审改记录中的问题
-
-        - 生成修改后的帖子内容
-
-        - 生成修改后的视频脚本内容
-
-        """
-
-        topics = upstream_data.get("topics", [])
-
-        koc = upstream_data.get("koc", {})
-
-
-
-        # 初始化文档存储（用于读取文档内容）
-
-        doc_storage = FeishuDocStorage()
-
-
-
-        edit_results = []
-
-        for topic in topics:
-
-            # 获取文档链接（从URL字段读取）
-
-            post_url = topic.get("帖子文档链接", "")
-
-            script_url = topic.get("视频脚本文档链接", "")
-
-
-
-            # 检查是否有审改文档
-
-            audit_url = topic.get("审改文档链接", "")
-
-            if not audit_url:
-
-                print(f"[小改] 选题 {topic.get('id', '')} 无审改文档，跳过")
-
-                continue
-
-
-
-            # 从URL读取文档内容
-
-            posts = {}
-
-            scripts = {}
-
-
-
-            if post_url:
-
-                try:
-
-                    doc_id = doc_storage.extract_doc_id_from_url(post_url)
-
-                    post_content = doc_storage.read_doc_content(doc_id)
-
-                    posts = {"文档内容": post_content[:2000]} if post_content else {}
-
-                except Exception as e:
-
-                    print(f"[小改] 读取帖子文档失败: {e}")
-
-                    posts = {"链接": post_url}
-
-
-
-            if script_url:
-
-                try:
-
-                    doc_id = doc_storage.extract_doc_id_from_url(script_url)
-
-                    script_content = doc_storage.read_doc_content(doc_id)
-
-                    scripts = {"文档内容": script_content[:2000]} if script_content else {}
-
-                except Exception as e:
-
-                    print(f"[小改] 读取脚本文档失败: {e}")
-
-                    scripts = {"链接": script_url}
-
-
-
-            # 构建修改提示词（简化版，不传递完整审改记录文本）
-
-            prompt = self._build_edit_prompt(topic, posts, scripts, "审改意见见飞书审改文档", koc)
-
-
-
-            try:
-
-                response = self.llm.invoke(prompt)
-
-                edit_result = self._parse_llm_response(response)
-
-
-
-                edit_results.append({
-
-                    "topic_id": topic.get("id", ""),
-
-                    "topic_title": topic.get("选题标题", ""),
-
-                    "edit_result": edit_result,
-
-                    "original_posts": posts,
-
-                    "original_scripts": scripts,
-
-                })
-
-            except Exception as e:
-
-                print(f"[小改] LLM修改失败: {e}")
-
-
-
-        return {"edit_results": edit_results, "count": len(edit_results)}
-
-
-
-    def _build_edit_prompt(self, topic: dict, posts: dict, scripts: dict,
-
-                          review_record: str, koc: dict) -> str:
-
-        """构建修改提示词。"""
-
-        # 提取KOC相关字段
-
-        koc_name = koc.get("账号名", "学AI的刘同学")
-
-        koc_tone = koc.get("语气", "玩梗活泼 + 专业硬核")
-
-        koc_structure = koc.get("偏爱内容结构", "反转开头、对比清单、实操步骤流、干货合集")
-
-        koc_platform_strategy = koc.get("平台差异化策略", "")
-
-
-
-        # 格式化帖子内容
-
-        post_text = json.dumps(posts, ensure_ascii=False, indent=2) if posts else "无"
-
-        script_text = json.dumps(scripts, ensure_ascii=False, indent=2) if scripts else "无"
-
-
-
-        return f"""你是【小改 Editor】，为KOC【{koc_name}】修改内容。
-
-
-
-KOC语气基调：
-
-{koc_tone}
-
-
-
-KOC偏爱内容结构：
-
-{koc_structure}
-
-
-
-KOC平台差异化策略：
-
-{koc_platform_strategy}
-
-
-
-请根据以下审改意见修改内容：
-
-
-
-选题标题：{topic.get("选题标题", "")}
-
-选题角度：{topic.get("选题角度", "")}
-
-
-
-原始帖子内容：
-
-{post_text}
-
-
-
-原始视频脚本：
-
-{script_text}
-
-
-
-审改记录（审查意见）：
-
-{review_record}
-
-
-
-请返回JSON格式：
-
-{{
-
-  "修改总结": "简要说明修改了哪些内容",
-
-  "修改后的帖子内容": {{
-
-    "公众号": "修改后的公众号文章内容",
-
-    "小红书": "修改后的小红书笔记内容",
-
-    "抖音": "修改后的抖音文案",
-
-    "B站": "修改后的B站专栏内容"
-
-  }},
-
-  "修改后的视频脚本": {{
-
-    "抖音": "修改后的抖音视频脚本",
-
-    "B站": "修改后的B站视频脚本"
-
-  }},
-
-  "修改说明": [
-
-    {{"位置": "公众号第2段", "修改": "具体修改内容", "原因": "对应审查意见"}},
-
-    {{"位置": "小红书标题", "修改": "具体修改内容", "原因": "对应审查意见"}}
-
-  ]
-
-}}
-
-
-
-修改原则：
-
-1. 严格对照审查意见中的问题进行修改
-
-2. 保持KOC的语气基调和风格一致性
-
-3. 保持平台差异化策略（公众号深度、小红书图文、抖音钩子、B站教程）
-
-4. 不引入新的风险词或合规问题
-
-5. 确保修改后的内容比原文更优质
-
-
-
-注意：
-
-- 如果审查意见指出事实错误，必须核实并修正
-
-- 如果审查意见指出风格偏差，必须调整语气
-
-- 如果审查意见指出合规风险，必须彻底移除风险内容
-
+        """LLM 精确修改 + 生成 changelog"""
+        koc = upstream_data["koc"]
+        topic = upstream_data["topic"]
+        asset = upstream_data["asset"]
+        revision_count = upstream_data["revision_count"]
+        audit_doc = upstream_data.get("audit_doc", "")
+
+        # 构建 prompt（简化版：基于审改文档内容）
+        koc_block = render_koc_block(koc, mode="review")
+        user_content = self._build_user_prompt(
+            koc_block, topic, revision_count, audit_doc
+        )
+
+        messages = [
+            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
+
+        thinking, answer, raw = invoke_with_retry(self.llm, messages, max_retries=3)
+
+        # v3 修复 Bug 4：检测 changelog 空
+        changelog = answer.get("changelog", [])
+        if not changelog:
+            raise LLMOutputError(
+                "小改输出 changelog 为空。如果你认为不需要修改，"
+                "应输出 dispute case（before == after + dispute_review = true），"
+                "而不是空 changelog。"
+            )
+
+        return {
+            "edit_result": answer,
+            "topic_id": topic.get("id", ""),
+            "asset_id": asset.get("id", ""),
+            "revision_count": revision_count,
+        }
+
+    def _build_user_prompt(self, koc_block: str, topic: dict, revision_count: int,
+                           audit_doc: str) -> str:
+        """构建用户 prompt"""
+        return f"""\
+{koc_block}
+
+<input>
+选题 ID：{topic.get('id', '')}
+当前轮次：{revision_count}（最大 3）
+
+【审改文档当前版本】
+{audit_doc[:3000] if audit_doc else '（审改文档为空，请基于选题直接修改）'}
+
+选题标题：{topic.get('选题标题', '')}
+选题角度：{topic.get('选题角度', '')}
+预估爆点：{topic.get('预估爆点', '')}
+</input>
+
+<rules>
+【修改原则】
+1. 只改小审指出的位置（从审改文档中提取 issues）
+2. 不擅自创作、不擅自重写整段
+3. 不引入新问题
+4. 保持 KOC 风格（用"咱们/我们"、不焦虑）
+
+【changelog 格式（关键）】
+每条 changelog：
+- issue_index：对应 issues 的索引
+- 资产：长文 / 图素材 / 视频脚本
+- 位置：与 issue 一致
+- diff：before（原文片段）/ after（新片段）
+- 修改说明：一句话解释
+
+【⚠️ changelog 空的处理（v3 修复 Bug 4）】
+如果你认为"原稿其实没问题"——不允许输出空 changelog。
+应该：
+- 仍然输出 changelog（至少 1 条），但 diff 的 before == after
+- 在"修改说明"明确说"经核查，原稿无需修改。理由：xxx"
+- 设置字段 dispute_review = true
+
+连续 3 次 dispute → 触发 ASSET.审改状态 = "卡死"。
+
+【修改后输出格式】
+audit_doc_updated 包含完整的 3 件资产新版本：
+- updated_long_form
+- updated_image_pool
+- updated_script
+未被修改的部分照搬原文，被修改的部分用新内容。
+</rules>
+
+<self_check>
+输出前确认：
+□ changelog 列表非空（即使是 dispute case 也填一条 before==after）
+□ 每条 changelog 含 issue_index/资产/位置/diff/修改说明
+□ 修改位置与小审 issues 完全对应
+□ 没有擅自修改小审未指出的内容
+□ audit_doc_updated 含 3 件资产完整内容
+□ 修改后符合 KOC 调性
+□ 没有引入新的禁区话题
+□ self_check_pass 字段必填
+</self_check>
+
+现在开始处理。
 """
-
-
-
-    def _parse_llm_response(self, response: Any) -> dict:
-
-        """解析LLM响应。"""
-
-        try:
-
-            if isinstance(response, str):
-
-                content = response
-
-            elif hasattr(response, 'content'):
-
-                content = response.content
-
-            else:
-
-                content = str(response)
-
-
-
-            # 尝试从markdown代码块中提取JSON
-
-            if '```json' in content:
-
-                content = content.split('```json')[1].split('```')[0]
-
-            elif '```' in content:
-
-                content = content.split('```')[1].split('```')[0]
-
-
-
-            return json.loads(content.strip())
-
-        except Exception as e:
-
-            print(f"[小改] 解析LLM响应失败: {e}")
-
-            return {
-
-                "修改总结": "解析失败",
-
-                "修改后的帖子内容": {},
-
-                "修改后的视频脚本": {},
-
-                "修改说明": [{"位置": "解析失败", "修改": "无法解析LLM响应", "原因": "请人工检查"}]
-
-            }
-
-
 
     def _write_storage(self, context: dict, result: dict):
+        """追加修改章节到审改文档 + 检查 dispute"""
+        edit_result = result.get("edit_result", {})
+        asset_id = result.get("asset_id", "")
+        revision_count = result.get("revision_count", 0)
 
-        """追加修改章节到审改云文档。
+        changelog = edit_result.get("changelog", [])
+        dispute_review = edit_result.get("dispute_review", False)
 
-
-
-        状态保持"审改中"（等待小审再次审查）
-
-
-
-        防循环保护：如果没有可修改的内容，直接标记为"待发布"防止无限循环。
-
-        """
-
-        edit_results = result.get("edit_results", [])
-
-        doc_storage = FeishuDocStorage()
-
-
-
-        # 防循环保护：如果没有修改结果，直接通过
-
-        if not edit_results:
-
-            print(f"[小改] 警告：无修改内容，强制通过防止循环")
-
+        # 检查是否所有 changelog 都是 dispute（before == after）
+        all_dispute = False
+        if changelog:
             try:
+                all_dispute = all(
+                    c.get("diff", {}).get("before", "") == c.get("diff", {}).get("after", "")
+                    for c in changelog
+                )
+            except Exception:
+                all_dispute = False
 
-                # 手动过滤避免QueryFilter问题
+        # 检查连续 dispute 次数
+        if all_dispute and not dispute_review:
+            # 有 changelog 但全是 before==after，强制标记为 dispute
+            dispute_review = True
 
-                all_topics = self.storage.query("选题库", limit=100)
-
-                topics = [t for t in all_topics if t.data.get("状态") == "审改中"][:10]
-
-                for topic in topics:
-
-                    topic_id = topic.data.get("id", "")
-
-                    topic_title = topic.data.get("选题标题", "")
-
-                    if topic_id:
-
-                        # 读取已有审改文档并追加强制通过记录
-
-                        existing_url = topic.data.get("审改文档链接", "")
-
-                        if existing_url:
-
-                            # Handle URL field format - could be dict or string
-
-                            url_str = existing_url.get('link', '') if isinstance(existing_url, dict) else existing_url
-
-                            doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
-
-                            force_pass_entry = f"\n## 强制通过\n\n小改无修改内容，强制通过防止无限循环。\n\n"
-
-                            doc_storage.append_section(doc_id, force_pass_entry)
-
-                        self.storage.update("选题库", topic_id, {"状态": "待发布"})
-
-                        print(f"[小改] 强制通过：{topic_id}")
-
-            except Exception as e:
-
-                print(f"[小改] 强制通过失败: {e}")
-
-            return
-
-
-
-        for edit in edit_results:
-
-            topic_id = edit.get("topic_id", "")
-
-            topic_title = edit.get("topic_title", "")
-
-            edit_data = edit.get("edit_result", {})
-
-
-
-            edit_summary = edit_data.get("修改总结", "")
-
-            edit_details = edit_data.get("修改说明", [])
-
-
-
+        # 读取 ASSET 当前状态
+        if asset_id:
             try:
+                asset_record = self.storage.get_by_id("内容资产库", asset_id)
+                asset_data = asset_record.data if asset_record else {}
+                existing_dispute = asset_data.get("审改遗留问题", "")
+                consecutive = 0
+                try:
+                    if existing_dispute and "dispute" in str(existing_dispute):
+                        consecutive = 1  # 简化计数
+                except Exception:
+                    pass
 
-                # 读取已有审改文档链接
+                if dispute_review:
+                    consecutive += 1
+                    if consecutive >= 3:
+                        # 3 次连续 dispute → 卡死
+                        self.storage.update("内容资产库", asset_id, {
+                            "审改状态": "卡死",
+                        })
+                        raise RuntimeError(
+                            f"ASSET {asset_id} 连续多次 dispute review，标记为'卡死'。"
+                            f"需要人工介入。"
+                        )
 
-                existing = self.storage.get_by_id("选题库", topic_id)
+                # 追加修改章节到审改文档
+                audit_url = asset_data.get("审改文档链接", "")
+                if audit_url:
+                    try:
+                        from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
+                        doc_storage = FeishuDocStorage()
+                        url_str = audit_url.get("link", "") if isinstance(audit_url, dict) else audit_url
+                        doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ""
+                        if doc_id:
+                            section = self._format_edit_section(revision_count, changelog, dispute_review)
+                            doc_storage.append_section(doc_id, section)
+                            print(f"[小改] 已追加第 {revision_count} 轮修改到审改文档")
+                    except Exception as e:
+                        print(f"[小改] 追加审改文档失败: {e}")
 
-                existing_url = existing.data.get("审改文档链接", "") if existing else ""
+                print(f"[小改] 修改完成: {len(changelog)} 处修改"
+                      f"{' (dispute)' if dispute_review else ''}")
 
-                if not existing_url:
-
-                    print(f"[小改] 警告：选题 {topic_id} 无审改文档链接，跳过")
-
-                    continue
-
-
-
-                # Handle URL field format - could be dict or string
-
-                url_str = existing_url.get('link', '') if isinstance(existing_url, dict) else existing_url
-
-                doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
-
-
-
-                # 生成修改记录并追加到审改文档
-
-                edit_entry = self._format_edit_entry(topic_title, edit_summary, edit_details)
-
-                doc_storage.append_section(doc_id, edit_entry)
-
-
-
-                # 将修改后的内容写回原文档，让小审再审时能看到修改版
-
-                self._write_edited_content_back(topic_id, edit_data, doc_storage)
-
-
-
-                # 修改完成后，将状态改回"生产中"，以便小审重新审查
-
-                self.storage.update("选题库", topic_id, {"状态": "生产中"})
-
-
-
-                print(f"[小改] 修改完成：{topic_title[:30]}... 修改点：{len(edit_details)}处，状态已重置为'生产中'等待再审")
-
+            except RuntimeError:
+                raise
             except Exception as e:
+                print(f"[小改] 更新存储失败: {e}")
 
-                print(f"[小改] 更新审改文档失败: {e}")
-
-
-
-    def _format_edit_entry(self, topic_title: str, edit_summary: str, edit_details: list) -> str:
-
-        """格式化修改记录条目（Markdown格式）。"""
-
+    def _format_edit_section(self, round_num: int, changelog: list, dispute: bool) -> str:
+        """格式化修改章节"""
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        md = f"\n\n## 第 {round_num} 轮修改 ({now})\n\n"
 
-
-
-        entry = f"""# {topic_title}
-
-
-
-## 修改记录 ({now})
-
-
-
-**修改总结**: {edit_summary}
-
-
-
-### 具体修改
-
-"""
-
-
-
-        if edit_details:
-
-            for detail in edit_details:
-
-                entry += f"- **{detail.get('位置', '未知位置')}**: {detail.get('修改', '')}\n"
-
-                entry += f"  - 原因: {detail.get('原因', '')}\n"
-
+        if dispute:
+            md += "**状态**: ⚠️ dispute review（有争议，建议复审）\n\n"
         else:
+            md += f"**修改数**: {len(changelog)} 处\n\n"
 
-            entry += "- 无详细修改记录\n"
+        for i, entry in enumerate(changelog):
+            md += f"### 修改 {i+1}\n\n"
+            md += f"- **资产**: {entry.get('资产', '')}\n"
+            md += f"- **位置**: {entry.get('位置', '')}\n"
 
+            diff = entry.get("diff", {})
+            md += f"- **修改前**: {diff.get('before', '')}\n"
+            md += f"- **修改后**: {diff.get('after', '')}\n"
+            md += f"- **说明**: {entry.get('修改说明', '')}\n\n"
 
+        md += "---\n"
+        return md
 
-        entry += "\n---\n"
-
-        return entry
-
-
-
-    def _format_post_document(self, posts: dict) -> str:
-
-        """格式化帖子内容为Markdown文档。"""
-
-        content = "# 修改后的帖子内容\n\n"
-
-
-
-        for platform, post in posts.items():
-
-            content += f"## {platform}版本\n\n"
-
-            if isinstance(post, dict):
-
-                for key, value in post.items():
-
-                    content += f"**{key}**: {value}\n\n"
-
-            else:
-
-                content += f"{post}\n\n"
-
-
-
-        return content
-
-
-
-    def _format_script_document(self, scripts: dict) -> str:
-
-        """格式化视频脚本为Markdown文档。"""
-
-        content = "# 修改后的视频脚本\n\n"
-
-
-
-        for platform, script in scripts.items():
-
-            content += f"## {platform}版\n\n"
-
-            if isinstance(script, dict):
-
-                for key, value in script.items():
-
-                    content += f"**{key}**: {value}\n\n"
-
-            else:
-
-                content += f"{script}\n\n"
-
-
-
-        return content
-
-
-
-    def _write_edited_content_back(self, topic_id: str, edit_data: dict, doc_storage: FeishuDocStorage):
-
-        """将修改后的内容追加到原始帖子文档和脚本文档。
-
-
-
-        这样小审再次审查时，能看到修改后的版本，而不是只读v0原稿。
-
-        """
-
-        try:
-
-            topic = self.storage.get_by_id("选题库", topic_id)
-
-            if not topic:
-
-                return
-
-
-
-            topic_data = topic.data
-
-            post_url = topic_data.get("帖子文档链接", "")
-
-            script_url = topic_data.get("视频脚本文档链接", "")
-
-
-
-            # 获取修改后的内容
-
-            edited_posts = edit_data.get("修改后的帖子内容", {})
-
-            edited_scripts = edit_data.get("修改后的视频脚本", {})
-
-
-
-            # 追加修改版到帖子文档
-
-            if post_url and edited_posts:
-
-                try:
-
-                    url_str = post_url.get('link', '') if isinstance(post_url, dict) else post_url
-
-                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
-
-                    if doc_id:
-
-                        revision_markdown = self._format_revised_post_document(edited_posts)
-
-                        doc_storage.append_section(doc_id, revision_markdown)
-
-                        print(f"[小改] 已追加修改版到帖子文档")
-
-                except Exception as e:
-
-                    print(f"[小改] 追加修改版到帖子文档失败: {e}")
-
-
-
-            # 追加修改版到脚本文档
-
-            if script_url and edited_scripts:
-
-                try:
-
-                    url_str = script_url.get('link', '') if isinstance(script_url, dict) else script_url
-
-                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
-
-                    if doc_id:
-
-                        revision_markdown = self._format_revised_script_document(edited_scripts)
-
-                        doc_storage.append_section(doc_id, revision_markdown)
-
-                        print(f"[小改] 已追加修改版到脚本文档")
-
-                except Exception as e:
-
-                    print(f"[小改] 追加修改版到脚本文档失败: {e}")
-
-
-
-        except Exception as e:
-
-            print(f"[小改] 写回修改内容失败: {e}")
-
-
-
-    def _format_revised_post_document(self, posts: dict) -> str:
-
-        """格式化修改后的帖子内容为追加章节。"""
-
-        content = "\n\n---\n\n# 修改版（小改修订）\n\n"
-
-        for platform, post in posts.items():
-
-            content += f"## {platform}版本（修订后）\n\n"
-
-            if isinstance(post, dict):
-
-                for key, value in post.items():
-
-                    content += f"**{key}**: {value}\n\n"
-
-            else:
-
-                content += f"{post}\n\n"
-
-        return content
-
-
-
-    def _format_revised_script_document(self, scripts: dict) -> str:
-
-        """格式化修改后的视频脚本为追加章节。"""
-
-        content = "\n\n---\n\n# 修改版（小改修订）\n\n"
-
-        for platform, script in scripts.items():
-
-            content += f"## {platform}版（修订后）\n\n"
-
-            if isinstance(script, dict):
-
-                for key, value in script.items():
-
-                    content += f"**{key}**: {value}\n\n"
-
-            else:
-
-                content += f"{script}\n\n"
-
-        return content
-
-
-
-    def _log_work(self, context: dict, result: dict):
-
-        """记录工作日志。"""
-
-        count = result.get("count", 0)
-
-        print(f"[小改] 完成：修改 {count} 条选题")
-
-        super()._log_work(context, result)
-
-
-
-
-
-# 保持向后兼容的别名
 
 Editor = EditorAgent
-

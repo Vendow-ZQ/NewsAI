@@ -1,440 +1,303 @@
-# -*- coding: utf-8 -*-
-"""Agent module."""
+"""小图 VisualDesigner - 视觉设计 Agent (EMP-004)。
 
-SYSTEM_PROMPT = """
-
-\
-
-<role>
-
-你是「小图 VisualDesigner」，NewsAI 编辑部的视觉设计师，生产组成员。
-
-你的工作是：读小文写好的帖子文档里的 [配图N: 描述]，
-
-为每个配图生成"3 选 1"的设计方案：
-
-1. 文字卡片图（HTML 模板渲染，最常用）
-
-2. 信息图（SVG 模板，对比/流程类）
-
-3. AI 画面图（即梦 prompt，需要画面感时用）
-
-</role>
-
-
-
-<workflow>
-
-1. 读 <input> 的选题 + 帖子文档的配图说明列表
-
-2. 在 <thinking> 里：
-
-   - 每张图最适合哪种类型？（文字卡片 / 信息图 / AI 画面）
-
-   - 为什么这种类型最适合？
-
-3. 在 <answer> 输出每张图的设计方案
-
-</workflow>
-
-
-
-<output_format>
-
-先在 <thinking>...</thinking>，
-
-然后在 <answer>{...}</answer>。
-
-</output_format>
-
+v3.0 改造：
+- 产出 5-8 张图素材池（不再是配图方案 JSON）
+- 读小文长文全文（v3 修复 Bug 7）
+- 每张图标注适用平台
 """
 
 import json
-
 from datetime import datetime
-
 from typing import Any
 
-
-
-from core.agents.base import BaseAgent, parse_koc_data
-
-from core.storage.interface import QueryFilter
-from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
-
-
-
+from core.agents.base import BaseAgent, current_timestamp_ms, parse_koc_data
+from core.prompts.shared.koc_persona import render_koc_block
+from core.storage.id_generator import IDGenerator
+from core.utils.llm_output_parser import invoke_with_retry
 
 
 class VisualDesignerAgent(BaseAgent):
+    """小图 EMP-004 · 视觉设计师"""
 
-    """小图 VisualDesigner - 视觉设计师。
+    name = "小图"
+    english_name = "VisualDesigner"
+    emoji = "🎨"
 
+    SYSTEM_PROMPT = """\
+<role>
+你是「小图 VisualDesigner」，NewsAI 编辑部的视觉设计师，生产组成员。
+你的工作是为这次选题产出 5-8 张图的描述 + prompt，作为「素材池」给小发分发时挑选。
+你不直接产出图片本身——你产出的是「图的设计方案」。
 
+3 类图你都要会做：
+1. 文字卡片图（HTML 模板渲染，最常用）
+2. 信息图（SVG 模板，对比/流程/数据类）
+3. AI 画面图（即梦 API，需要画面感时用）
+</role>
 
-    负责配图方案设计：文字卡片、信息图、AI画面图。
+<workflow>
+1. 读 <input>：选题 + 小文写的长文（含配图占位）
+2. 在 <thinking> 里：
+   - 长文里的 5+ 配图占位每个适合哪种类型？
+   - 还需要补充哪些图作为"素材池"（封面/总结金句/分享卡片等）？
+3. 在 <answer> 输出 5-8 张图的完整设计
+</workflow>
 
-    """
-
-
-
-    def __init__(self, storage: Any, llm_client: Any):
-
-        super().__init__("小图", storage, llm_client)
-
-
+<output_format>
+先 <thinking>...</thinking>（≤200字），然后 <answer>{JSON}</answer>。
+</output_format>
+"""
 
     def _read_upstream(self, context: dict) -> dict:
-
-        """读取选题库中状态="已选"的选题及帖子内容。
-
-
-
-        从"选题库"表中读取状态为"已选"的选题（小编创建后的状态），
-
-        同时读取KOC人设信息。
-
-        """
-
-        topic_id = context.get("topic_id")
-
-        koc_id = context.get("koc_id", "KOC-001")
-
-
-
+        """读 KOC + TOPIC + ASSET + 小文长文全文"""
         try:
+            koc_record = self.storage.get_by_id("KOC人设", "KOC-001")
+            koc = parse_koc_data(koc_record.data) if koc_record else {}
 
-            # 读取KOC人设
+            # 读"生产中"状态的选题
+            topics = self.storage.query("选题库", limit=10)
+            active_topics = [t.data for t in topics if t.data.get("选题状态") in ["已选中", "生产中"]]
+            if not active_topics:
+                raise RuntimeError("没有活跃选题")
+            topic = active_topics[0]
 
-            koc_record = self.storage.get_by_id("KOC人设", koc_id)
+            # 读 ASSET
+            asset_id = topic.get("关联资产ID", "")
+            asset = None
+            if asset_id:
+                asset_record = self.storage.get_by_id("内容资产库", asset_id)
+                asset = asset_record.data if asset_record else {}
 
-            koc = koc_record.data if koc_record else {}
-            koc = parse_koc_data(koc)
-
-
-
-            # 读取选题
-
-            if topic_id:
-
-                topic_record = self.storage.get_by_id("选题库", topic_id)
-
-                topics = [topic_record.data] if topic_record else []
-
-            else:
-
-                # 查询"已选"或"生产中"状态的选题（兼容小文提前改状态的情况）
-
-                all_records = self.storage.query("选题库", limit=100)
-
-                valid_status = ["已选", "生产中"]
-
-                topics = [r.data for r in all_records if r.data.get("状态") in valid_status][:10]
-
-
+            # 读小文的长文（如果有）
+            long_form_content = ""
+            if asset and asset.get("文案文档链接"):
+                try:
+                    from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
+                    doc_storage = FeishuDocStorage()
+                    doc_url = asset["文案文档链接"]
+                    url_str = doc_url.get("link", "") if isinstance(doc_url, dict) else doc_url
+                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ""
+                    if doc_id:
+                        long_form_content = doc_storage.read_doc_content(doc_id) or ""
+                except Exception as e:
+                    print(f"[小图] 读取长文失败: {e}")
 
             return {
-
                 "koc": koc,
-
-                "topics": topics,
-
+                "topic": topic,
+                "asset": asset or {},
+                "long_form_content": long_form_content,
             }
-
         except Exception as e:
-
             print(f"[小图] 读取上游数据失败: {e}")
-
-            return {"koc": {}, "topics": []}
-
-
+            raise
 
     def _invoke_tools(self, context: dict, upstream_data: dict) -> dict:
-
-        """小图暂不需要调用外部工具，配图生成由后续步骤处理。"""
-
-        return {}
-
-
+        """切换 ASSET 状态：未开始 → 生产中"""
+        asset = upstream_data.get("asset", {})
+        asset_id = asset.get("id", "")
+        if asset_id:
+            try:
+                self.storage.update("内容资产库", asset_id, {
+                    "配图状态": "生产中",
+                })
+                print(f"[小图] ASSET {asset_id} 配图状态: 生产中")
+            except Exception as e:
+                print(f"[小图] 更新 ASSET 状态失败: {e}")
+        return {"asset_id": asset_id}
 
     def _invoke_llm(self, context: dict, upstream_data: dict, tool_results: dict) -> dict:
-
-        """调用LLM生成配图方案。
-
-
-
-        为每个选题分析内容，生成完整的配图方案：
-
-        - 文字卡片图描述
-
-        - 信息图描述
-
-        - AI生图prompt
-
-        - 配图与正文对应关系
-
-        """
-
-        topics = upstream_data.get("topics", [])
-
-        koc = upstream_data.get("koc", {})
-
-
-
-        results = []
-
-        for topic in topics:
-
-            prompt = self._build_design_prompt(topic, koc)
-
-            try:
-
-                response = self.llm.invoke(prompt)
-
-                design_plan = self._parse_llm_response(response)
-
-                results.append({
-
-                    "topic_id": topic.get("id", ""),
-
-                    "topic_title": topic.get("选题标题", ""),
-
-                    "配图方案": design_plan.get("配图方案", []),
-
-                    "视觉风格": design_plan.get("视觉风格", ""),
-
-                })
-
-            except Exception as e:
-
-                print(f"[小图] LLM生成配图方案失败: {e}")
-
-                results.append({
-
-                    "topic_id": topic.get("id", ""),
-
-                    "topic_title": topic.get("选题标题", ""),
-
-                    "配图方案": [],
-
-                    "视觉风格": "",
-
-                    "error": str(e),
-
-                })
-
-
-
-        return {"designs": results, "count": len(results)}
-
-
-
-    def _build_design_prompt(self, topic: dict, koc: dict) -> str:
-
-        """构建配图方案设计的LLM提示词。"""
-
-        koc_name = koc.get("KOC名称", "学AI的刘同学")
-
-        koc_style = koc.get("视觉风格", "简洁科技风，蓝白配色")
-
-
-
-        topic_title = topic.get("选题标题", "")
-
-        topic_angle = topic.get("选题角度", "")
-
-        key_points = topic.get("预估爆点", "")
-
-        post_doc_url = topic.get("帖子文档链接", "")
-
-
-
-        return f"""你是【小图 VisualDesigner】，为 KOC【{koc_name}】工作。
-
-
-
-KOC视觉风格偏好：{koc_style}
-
-
-
-请为以下内容设计配图方案：
-
-
-
-选题：{topic_title}
-
-选题角度：{topic_angle}
-
-预估爆点：{key_points}
-
-帖子文档链接：{post_doc_url if post_doc_url else "（待生成）"}
-
-（内容已写入飞书云文档，根据选题角度和预估爆点设计配图即可）
-
-
-
-请返回JSON格式：
-
-{{
-
-  "配图方案": [
-
-    {{
-
-      "配图编号": "配图1",
-
-      "用途": "公众号封面/小红书首图/正文插图",
-
-      "类型": "文字卡片/信息图/AI画面图",
-
-      "描述": "画面描述...",
-
-      "技术方案": "HTML模板名/SVG模板名/即梦API",
-
-      "AI生成Prompt": "即梦API用的prompt（如适用）...",
-
-      "对应正文位置": "第X段/封面/首图"
-
-    }},
-
-    ...
-
-  ],
-
-  "视觉风格": "整体风格建议"
-
-}}
-
-
-
-配图类型说明：
-
-1. 文字卡片：适合金句、核心观点，用HTML模板渲染
-
-2. 信息图：适合数据、流程、对比，用SVG模板渲染
-
-3. AI画面图：适合场景图、概念图，用即梦API生成
-
-
-
-要求：
-
-- 每篇内容配3-5张图
-
-- 封面图必须吸引人
-
-- 正文插图与内容紧密对应
-
-- AI生成Prompt要详细，包含风格、构图、色彩"""
-
-
-
-    def _parse_llm_response(self, response: Any) -> dict:
-
-        """解析LLM响应为配图方案。"""
-
-        try:
-
-            if isinstance(response, str):
-
-                content = response
-
-            elif hasattr(response, 'content'):
-
-                content = response.content
-
-            else:
-
-                content = str(response)
-
-
-
-            # 尝试从markdown代码块中提取JSON
-
-            if '```json' in content:
-
-                content = content.split('```json')[1].split('```')[0]
-
-            elif '```' in content:
-
-                content = content.split('```')[1].split('```')[0]
-
-
-
-            return json.loads(content.strip())
-
-        except Exception as e:
-
-            print(f"[小图] 解析LLM响应失败: {e}")
-
-            return {"配图方案": [], "视觉风格": ""}
-
-
+        """LLM 设计 5-8 张图"""
+        koc = upstream_data["koc"]
+        topic = upstream_data["topic"]
+        long_form = upstream_data.get("long_form_content", "")
+
+        # 提取配图占位
+        placeholders = _extract_image_placeholders(long_form)
+
+        # 构建 prompt
+        koc_block = render_koc_block(koc, mode="visual")
+        user_content = self._build_user_prompt(koc_block, topic, long_form, placeholders)
+
+        messages = [
+            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
+
+        thinking, answer, raw = invoke_with_retry(self.llm, messages, max_retries=3)
+
+        return {
+            "image_pool": answer.get("图素材池", []),
+            "strategy": answer.get("素材池策略", ""),
+            "topic_id": topic.get("id", ""),
+            "topic_title": topic.get("选题标题", ""),
+            "asset_id": tool_results.get("asset_id", ""),
+        }
+
+    def _build_user_prompt(self, koc_block: str, topic: dict, long_form: str, placeholders: list) -> str:
+        """构建用户 prompt"""
+        placeholders_text = "\n".join(f"{i+1}. {p}" for i, p in enumerate(placeholders)) if placeholders else "（小文未标记配图占位）"
+
+        return f"""\
+{koc_block}
+
+<input>
+选题 ID：{topic.get('id', '')}
+选题标题：{topic.get('选题标题', '')}
+选题角度：{topic.get('选题角度', '')}
+钩子类型：{topic.get('钩子类型', '')}
+
+小文写的长文（用于理解配图位置）：
+{long_form[:2000] if long_form else '（长文尚未生成或读取失败）'}
+
+长文中的配图占位（小文标记的，至少 5 个）：
+{placeholders_text}
+</input>
+
+<rules>
+【3 类图选择决策树】
+
+→ 对比/数据/流程类（开/关对比、3 步教程、数据图） → 信息图（SVG）
+→ 封面/金句/重点类（标题卡片、摘要金句） → 文字卡片图（HTML）
+→ 画面感/抽象意象类（"未来感办公场景"） → AI 画面图（即梦 prompt）
+
+【输出 5-8 张图素材池的结构】
+
+必须覆盖以下用途（小发后续会按平台选用）：
+1. 「封面金句卡」（必须）—— 通用封面，文字卡片图
+2. 「正文配图 1-N」（对应小文的配图占位）—— 各类型混搭
+3. 「总结对照图」（必须）—— 信息图（对比/清单类）
+4. 「金句卡片 1-2 张」—— 文字卡片图（适合小红书）
+
+【每张图的输出字段（不同类型不同）】
+
+通用字段：
+- 图编号（"图1", "图2"...）
+- 用途（封面 / 正文配图 / 总结 / 金句）
+- 图类型（文字卡片 / 信息图 / AI画面图）
+- 描述（一句话说明传达什么）
+- 适用平台（小发分发时参考）
+
+文字卡片图额外：
+- template（card_white / card_dark / card_emoji / card_minimal）
+- main_text（主文字，≤15字）
+- sub_text（副文字，≤25字，可空）
+- accent_emoji（点缀 emoji）
+
+信息图额外：
+- template（infographic_compare / infographic_steps / infographic_data / infographic_checklist）
+- title（图标题）
+- data（结构化数据，与 template 匹配）
+
+AI 画面图额外：
+- jimeng_prompt（即梦 prompt，中文，描述画面）
+- aspect_ratio（1:1 / 16:9 / 9:16）
+- negative_prompt（避免出现的元素）
+- 风格描述（如"极简 UI / 商务摄影 / 二次元卡通"）
+
+【图片素材池规划原则】
+- 总数 5-8 张（不要超）
+- 至少 3 张文字卡片（最常用）
+- 1-2 张信息图（强力传播工具）
+- 0-2 张 AI 画面图（增强视觉冲击）
+- 平台适配：覆盖小红书（图文 9 张需求）+ 公众号（3-5 张）+ B站（封面）
+</rules>
+
+<self_check>
+输出前确认：
+□ 图素材池数量 5-8 张
+□ 每张图都标注 "图编号" 和 "适用平台"
+□ 文字卡片 main_text ≤ 15 字
+□ 信息图 data 字段结构匹配 template
+□ AI 画面图 prompt 含场景 + 风格 + 否定词
+□ 至少 1 张"封面"用途、1 张"总结"用途
+□ 总数不超 8 张
+</self_check>
+
+现在开始处理。
+"""
 
     def _write_storage(self, context: dict, result: dict):
-        """将配图方案写入配图方案文档，并返还文档链接到选题库。"""
-        designs = result.get("designs", [])
-        doc_storage = FeishuDocStorage()
-        date_str = datetime.now().strftime("%Y%m%d")
+        """创建图片提示词文档 + 更新 ASSET 状态"""
+        topic_id = result.get("topic_id", "")
+        topic_title = result.get("topic_title", "")
+        asset_id = result.get("asset_id", "")
+        image_pool = result.get("image_pool", [])
 
-        for design in designs:
-            topic_id = design.get("topic_id")
-            if not topic_id:
-                continue
+        # 格式化素材池为 Markdown
+        markdown = self._format_image_pool(image_pool, topic_title)
 
+        # 创建飞书云文档
+        doc_url = ""
+        try:
+            from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
+            doc_storage = FeishuDocStorage()
+            date_str = datetime.now().strftime("%Y%m%d")
+            doc_id = doc_storage.create_doc(f"[配图] {date_str} {topic_title}")
+            doc_storage.append_section(doc_id, markdown)
+            doc_storage.set_permissions(doc_id, share_type="tenant_readable")
+            doc_url = doc_storage.get_share_url(doc_id)
+            print(f"[小图] 创建配图文档: {topic_title[:30]}...")
+        except Exception as e:
+            print(f"[小图] 创建配图文档失败: {e}")
+
+        # 更新 ASSET
+        if asset_id:
             try:
-                # 检查是否已有配图方案文档
-                existing = self.storage.get_by_id("选题库", topic_id)
-                existing_url = existing.data.get("配图方案文档链接", "") if existing else ""
-
-                if existing_url:
-                    url_str = existing_url.get('link', '') if isinstance(existing_url, dict) else existing_url
-                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
-                else:
-                    # 创建新文档
-                    topic_title = design.get("topic_title", "配图方案")
-                    doc_title = f"[配图] {date_str} {topic_title}"
-                    doc_id = doc_storage.create_doc(doc_title)
-
-                # 构建配图方案文档内容
-                design_markdown = self._format_design_document(design)
-                doc_storage.append_section(doc_id, design_markdown)
-
-                # 设置权限并获取链接
-                doc_storage.set_permissions(doc_id, share_type="tenant_readable")
-                doc_url = doc_storage.get_share_url(doc_id)
-
-                update_data = {
-                    "配图方案文档链接": doc_url,
-                    "配图方案": json.dumps(design.get("配图方案", []), ensure_ascii=False),
-                    "视觉风格": design.get("视觉风格", ""),
-                    "配图更新时间": int(datetime.now().timestamp() * 1000),
-                }
-
-                self.storage.update("选题库", topic_id, update_data)
-                print(f"[小图] 已更新配图方案文档: {design.get('topic_title', '')[:30]}...")
-                print(f"[小图] 文档链接: {doc_url}")
-
+                self.storage.update("内容资产库", asset_id, {
+                    "配图状态": "已完成",
+                    "图片提示词文档链接": doc_url,
+                })
+                print(f"[小图] ASSET {asset_id} 配图状态: 已完成")
             except Exception as e:
-                print(f"[小图] 更新配图方案失败: {e}")
+                print(f"[小图] 更新 ASSET 失败: {e}")
+
+        result["doc_url"] = doc_url
+
+    def _format_image_pool(self, image_pool: list, topic_title: str) -> str:
+        """格式化图素材池为 Markdown"""
+        md = f"# [配图] {topic_title}\n\n"
+        md += f"*共 {len(image_pool)} 张图*\n\n---\n\n"
+
+        for img in image_pool:
+            md += f"## {img.get('图编号', '')} · {img.get('用途', '')}\n\n"
+            md += f"**类型**: {img.get('图类型', '')}\n\n"
+            md += f"**描述**: {img.get('描述', '')}\n\n"
+            md += f"**适用平台**: {', '.join(img.get('适用平台', []))}\n\n"
+
+            img_type = img.get("图类型", "")
+            if img_type == "文字卡片":
+                md += f"- template: `{img.get('template', '')}`\n"
+                md += f"- main_text: `{img.get('main_text', '')}`\n"
+                md += f"- sub_text: `{img.get('sub_text', '')}`\n"
+                md += f"- accent_emoji: {img.get('accent_emoji', '')}\n"
+            elif img_type == "信息图":
+                md += f"- template: `{img.get('template', '')}`\n"
+                md += f"- title: `{img.get('title', '')}`\n"
+                md += f"- data: `{json.dumps(img.get('data', {}), ensure_ascii=False)}`\n"
+            elif img_type == "AI画面图":
+                md += f"- jimeng_prompt: `{img.get('jimeng_prompt', '')}`\n"
+                md += f"- aspect_ratio: `{img.get('aspect_ratio', '')}`\n"
+                md += f"- negative_prompt: `{img.get('negative_prompt', '')}`\n"
+                md += f"- 风格: `{img.get('风格描述', '')}`\n"
+
+            md += "\n---\n\n"
+
+        return md
 
 
+# =============================================================================
+# 辅助函数
+# =============================================================================
 
-    def _log_work(self, context: dict, result: dict):
+def _extract_image_placeholders(content: str) -> list:
+    """从长文中提取 [配图N: 描述] 占位"""
+    import re
+    if not content:
+        return []
+    pattern = r'\[配图\d+:\s*([^\]]+)\]'
+    matches = re.findall(pattern, content)
+    return matches
 
-        """记录工作日志。"""
-
-        count = result.get("count", 0)
-
-        print(f"[小图] 完成：为 {count} 个选题生成配图方案")
-
-        super()._log_work(context, result)
-
-
-
-
-
-# 保持向后兼容的别名
 
 VisualDesigner = VisualDesignerAgent
-

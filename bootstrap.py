@@ -216,11 +216,12 @@ async def setup_tables(base: FeishuBaseManager) -> Dict[str, str]:
 
     table_ids = {}
 
-    # 按顺序创建7张表
+    # 按顺序创建8张表（v3.0：新增内容资产库）
     table_order = [
         "信源配置",
         "热帖库",
         "选题库",
+        "内容资产库",  # v3.0 新增
         "数据库",
         "KOC人设",
         "Agent花名册",
