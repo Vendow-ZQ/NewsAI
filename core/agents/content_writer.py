@@ -45,6 +45,20 @@ class ContentWriterAgent(BaseAgent):
 <output_format>
 先在 <thinking>...</thinking> 写规划（≤200字），
 然后 <answer>{长文 JSON}</answer>。
+
+【长文 JSON 必须包含的字段】
+{
+  "标题": "文章标题（前8字必须有钩子）",
+  "正文": "文章完整正文内容（1000-3000字）",
+  "字数": 1234,
+  "配图占位": [
+    "[配图1: 描述图片要传达的内容]",
+    "[配图2: 描述图片要传达的内容]",
+    "[配图3: 描述图片要传达的内容]",
+    "[配图4: 描述图片要传达的内容]",
+    "[配图5: 描述图片要传达的内容]"
+  ]
+}
 </output_format>
 """
 
@@ -125,6 +139,23 @@ class ContentWriterAgent(BaseAgent):
         ]
 
         thinking, answer, raw = invoke_with_retry(self.llm, messages, max_retries=3)
+
+        # 防御性处理：确保 answer 是 dict
+        if isinstance(answer, str):
+            # LLM 返回了字符串，包装成标准格式
+            answer = {
+                "标题": topic.get("选题标题", "未命名文章"),
+                "正文": answer,
+                "字数": len(answer),
+                "配图占位": [],
+            }
+        elif not isinstance(answer, dict):
+            answer = {
+                "标题": topic.get("选题标题", "未命名文章"),
+                "正文": str(answer) if answer else "",
+                "字数": 0,
+                "配图占位": [],
+            }
 
         return {
             "long_form_content": answer,
@@ -248,21 +279,44 @@ class ContentWriterAgent(BaseAgent):
 
         result["doc_url"] = doc_url
 
-    def _format_long_form(self, content: dict) -> str:
+    def _format_long_form(self, content) -> str:
         """格式化长文为 Markdown"""
+        # 防御性处理：确保 content 是 dict
+        if isinstance(content, str):
+            # LLM 返回了纯文本，包装成标准格式
+            content = {
+                "标题": "未命名文章",
+                "正文": content,
+                "字数": len(content),
+                "配图占位": [],
+            }
+        elif not isinstance(content, dict):
+            content = {}
+
         title = content.get("标题", "")
         body = content.get("正文", "")
         word_count = content.get("字数", 0)
         placeholders = content.get("配图占位", [])
 
+        # 如果正文为空，尝试直接使用 content 作为正文（LLM 可能返回了字符串）
+        if not body and isinstance(content, dict) and len(content) == 1:
+            # 可能是 {"key": "value"} 格式，取第一个值作为正文
+            first_value = list(content.values())[0]
+            if isinstance(first_value, str) and len(first_value) > 100:
+                body = first_value
+                word_count = len(body)
+
         md = f"# {title}\n\n"
         md += f"*{word_count} 字*\n\n"
         md += "---\n\n"
-        md += body
+        md += body if body else "（正文内容为空）"
         md += "\n\n---\n\n"
         md += "## 配图占位清单\n\n"
-        for ph in placeholders:
-            md += f"- {ph}\n"
+        if placeholders:
+            for ph in placeholders:
+                md += f"- {ph}\n"
+        else:
+            md += "（无配图占位）\n"
 
         return md
 
