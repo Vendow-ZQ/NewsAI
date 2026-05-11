@@ -45,6 +45,25 @@ class VisualDesignerAgent(BaseAgent):
 
 <output_format>
 先 <thinking>...</thinking>（≤200字），然后 <answer>{JSON}</answer>。
+
+【图素材池 JSON 格式】
+{
+  "图素材池": [
+    {
+      "图编号": "图1",
+      "用途": "封面",
+      "图类型": "文字卡片",
+      "描述": "一句话说明传达什么",
+      "适用平台": ["小红书", "公众号"],
+      "template": "card_white",
+      "main_text": "主文字≤15字",
+      "sub_text": "副文字≤25字",
+      "accent_emoji": "🚀"
+    },
+    ... 共5-8张图
+  ],
+  "素材池策略": "为什么选择这些图的策略说明"
+}
 </output_format>
 """
 

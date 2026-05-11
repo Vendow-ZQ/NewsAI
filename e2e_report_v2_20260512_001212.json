@@ -1,0 +1,110 @@
+{
+  "start_time": "2026-05-12T00:05:03.108841",
+  "agents": [
+    {
+      "agent": "小哨",
+      "status": "PASS",
+      "detail": "写入 21 条热帖",
+      "elapsed": 86.67,
+      "timestamp": "2026-05-12T00:06:30.400938",
+      "trend_count": 21
+    },
+    {
+      "agent": "小编",
+      "status": "PASS",
+      "detail": "生成 3 条选题，选中 TOPIC-20260512-001",
+      "elapsed": 63.95,
+      "timestamp": "2026-05-12T00:07:34.349514",
+      "asset_id": "ASSET-20260512-001"
+    },
+    {
+      "agent": "小文",
+      "status": "PASS",
+      "detail": "1872 字, 6 个配图",
+      "elapsed": 111.28,
+      "timestamp": "2026-05-12T00:09:25.632622"
+    },
+    {
+      "agent": "小图",
+      "status": "PASS",
+      "detail": "0 张图素材",
+      "elapsed": 50.16,
+      "timestamp": "2026-05-12T00:10:15.794541"
+    },
+    {
+      "agent": "小播",
+      "status": "PASS",
+      "detail": ", 5 个镜头",
+      "elapsed": 40.44,
+      "timestamp": "2026-05-12T00:10:56.237997"
+    },
+    {
+      "agent": "production_sync",
+      "status": "PASS",
+      "detail": "检查 3 状态",
+      "elapsed": 3.53,
+      "timestamp": "2026-05-12T00:11:00.313651"
+    },
+    {
+      "agent": "小审",
+      "status": "PASS",
+      "detail": "needs_revision, 3 issues",
+      "elapsed": 33.38,
+      "timestamp": "2026-05-12T00:11:33.693865"
+    },
+    {
+      "agent": "小改",
+      "status": "PASS",
+      "detail": "1 处修改",
+      "elapsed": 36.09,
+      "timestamp": "2026-05-12T00:12:09.784741"
+    },
+    {
+      "agent": "小发",
+      "status": "FAIL",
+      "detail": "没有分发中的选题",
+      "elapsed": 1.34,
+      "timestamp": "2026-05-12T00:12:11.126586"
+    },
+    {
+      "agent": "小数",
+      "status": "FAIL",
+      "detail": "没有已发布的选题",
+      "elapsed": 1.25,
+      "timestamp": "2026-05-12T00:12:12.376821"
+    }
+  ],
+  "total_time": 428.66,
+  "bugs": [
+    {
+      "agent": "小图",
+      "severity": "P2",
+      "description": "图素材池: 图素材池不足(<5)",
+      "timestamp": "2026-05-12T00:10:15.794506"
+    },
+    {
+      "agent": "小图",
+      "severity": "P1",
+      "description": "图素材池不足: 0 张",
+      "timestamp": "2026-05-12T00:10:15.794530"
+    },
+    {
+      "agent": "小播",
+      "severity": "P2",
+      "description": "总时长: 无总时长",
+      "timestamp": "2026-05-12T00:10:56.237964"
+    },
+    {
+      "agent": "小发",
+      "severity": "P1",
+      "description": "没有分发中的选题",
+      "timestamp": "2026-05-12T00:12:11.126598"
+    },
+    {
+      "agent": "小数",
+      "severity": "P1",
+      "description": "没有已发布的选题",
+      "timestamp": "2026-05-12T00:12:12.376833"
+    }
+  ]
+}

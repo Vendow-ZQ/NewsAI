@@ -42,6 +42,22 @@ class ScriptWriterAgent(BaseAgent):
 
 <output_format>
 先 <thinking>...</thinking>（≤200字），然后 <answer>{JSON}</answer>。
+
+【脚本 JSON 结构】
+{
+  "总时长": "1-3分钟",
+  "钩子类型": "反差/数字/提问/身份代入",
+  "钩子开头": {"时间": "00:00-00:05", "画面": "", "口播": "", "字幕": ""},
+  "核心内容": [{"段落": "", "时间": "", "画面": "", "口播": "", "字幕": ""}],
+  "CTA": {"时间": "", "画面": "", "口播": "", "字幕": ""},
+  "镜头清单": [
+    {"时间码": "00:00:00~00:00:15", "画面": "", "口播": "", "字幕": ""}
+  ],
+  "BGM建议": "",
+  "剪辑节奏说明": ""
+}
+
+镜头清单时间码格式统一用 00:00:00~00:00:15 这种格式，简洁明了
 </output_format>
 """
 
@@ -266,15 +282,21 @@ class ScriptWriterAgent(BaseAgent):
             md += f"- 口播: {cta.get('口播', '')}\n"
             md += f"- 字幕: {cta.get('字幕', '')}\n\n"
 
-        # 镜头清单
+        # 镜头清单（时间码格式）
         shots = script.get("镜头清单", [])
         if shots:
             md += "## 镜头清单\n\n"
-            md += "| 时间 | 画面 | 口播 | 字幕 |\n"
-            md += "|------|------|------|------|\n"
-            for shot in shots:
-                md += f"| {shot.get('时间', '')} | {shot.get('画面', '')} | {shot.get('口播', '')} | {shot.get('字幕', '')} |\n"
-            md += "\n"
+            for i, shot in enumerate(shots, 1):
+                timecode = shot.get('时间码', shot.get('时间', f'镜头{i}'))
+                scene = shot.get('画面', '')
+                audio = shot.get('口播', '')
+                subtitle = shot.get('字幕', '')
+                md += f"**{timecode}** {scene}\n\n"
+                if audio:
+                    md += f"口播: {audio[:80]}{'...' if len(audio) > 80 else ''}\n\n"
+                if subtitle:
+                    md += f"字幕: *{subtitle}*\n\n"
+                md += "---\n\n"
 
         # BGM
         bgm = script.get("BGM建议", "")

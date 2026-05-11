@@ -1,0 +1,97 @@
+{
+  "start_time": "2026-05-11T22:59:26.211926",
+  "agents": [
+    {
+      "agent": "小哨",
+      "status": "PASS",
+      "detail": "写入 21 条热帖",
+      "elapsed": 95.64,
+      "timestamp": "2026-05-11T23:01:02.504485"
+    },
+    {
+      "agent": "小编",
+      "status": "PASS",
+      "detail": "生成 3 条选题，选中 TOPIC-20260511-001, ASSET ASSET-20260511-001",
+      "elapsed": 52.01,
+      "timestamp": "2026-05-11T23:01:54.514884"
+    },
+    {
+      "agent": "小文",
+      "status": "PASS",
+      "detail": "文案文档: https://f5tgebopkn.feishu.cn/docx/VSksdfC0Qoz0CZxi...",
+      "elapsed": 73.71,
+      "timestamp": "2026-05-11T23:03:08.220587"
+    },
+    {
+      "agent": "小图",
+      "status": "PASS",
+      "detail": "6 张图, 文档: https://f5tgebopkn.feishu.cn/docx/VbDcdr...",
+      "elapsed": 48.84,
+      "timestamp": "2026-05-11T23:03:57.061124"
+    },
+    {
+      "agent": "小播",
+      "status": "PASS",
+      "detail": "1分40秒, 文档: https://f5tgebopkn.feishu.cn/docx/AwdndE...",
+      "elapsed": 45.3,
+      "timestamp": "2026-05-11T23:04:42.365728"
+    },
+    {
+      "agent": "production_sync",
+      "status": "PASS",
+      "detail": "检查 3 状态",
+      "elapsed": 3.42,
+      "timestamp": "2026-05-11T23:04:45.786725"
+    },
+    {
+      "agent": "小审",
+      "status": "PASS",
+      "detail": "verdict=needs_revision",
+      "elapsed": 26.75,
+      "timestamp": "2026-05-11T23:05:12.537353"
+    },
+    {
+      "agent": "小改",
+      "status": "PASS",
+      "detail": "1 处修改",
+      "elapsed": 32.26,
+      "timestamp": "2026-05-11T23:05:44.794215"
+    },
+    {
+      "agent": "小审(v2)",
+      "status": "PASS",
+      "detail": "verdict=needs_revision",
+      "elapsed": 28.49,
+      "timestamp": "2026-05-11T23:06:13.285930"
+    },
+    {
+      "agent": "小发",
+      "status": "FAIL",
+      "detail": "没有分发中的选题",
+      "elapsed": 1.45,
+      "timestamp": "2026-05-11T23:06:14.733309"
+    },
+    {
+      "agent": "小数",
+      "status": "FAIL",
+      "detail": "没有已发布的选题",
+      "elapsed": 1.27,
+      "timestamp": "2026-05-11T23:06:16.004639"
+    }
+  ],
+  "total_time": 409.16,
+  "bugs": [
+    {
+      "agent": "小发",
+      "severity": "P1",
+      "description": "没有分发中的选题",
+      "timestamp": "2026-05-11T23:06:14.733321"
+    },
+    {
+      "agent": "小数",
+      "severity": "P1",
+      "description": "没有已发布的选题",
+      "timestamp": "2026-05-11T23:06:16.004652"
+    }
+  ]
+}
