@@ -511,14 +511,15 @@ B站竖屏（视频）：
                 md += f"- 节奏调整: {clip.get('节奏调整', '')}\n"
 
         # 添加分发策略信息
-        plan = distribution_plan.get("平台分发计划", [])
-        for p in plan:
-            if p.get("平台") == platform_name:
-                md += "\n---\n\n## 分发策略\n\n"
-                md += f"- 发布时间: {p.get('发布时间', '')}\n"
-                md += f"- 受众标签: {p.get('受众标签', [])}\n"
-                md += f"- 预期效果: {p.get('预期效果', '')}\n"
-                break
+        if isinstance(distribution_plan, dict):
+            plan = distribution_plan.get("平台分发计划", [])
+            for p in plan:
+                if isinstance(p, dict) and p.get("平台") == platform_name:
+                    md += "\n---\n\n## 分发策略\n\n"
+                    md += f"- 发布时间: {p.get('发布时间', '')}\n"
+                    md += f"- 受众标签: {p.get('受众标签', [])}\n"
+                    md += f"- 预期效果: {p.get('预期效果', '')}\n"
+                    break
 
         return md
 
