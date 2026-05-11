@@ -81,6 +81,7 @@ class ReviewerAgent(BaseAgent):
 
             # 当前审改轮次
             revision_count = asset.get("审改轮次", 0)
+            revision_count = int(revision_count) if revision_count else 0
 
             return {
                 "koc": koc,
@@ -260,6 +261,9 @@ if revision_count == 3 且仍有问题：
         forced_pass = review_result.get("forced_pass", False)
         issues = review_result.get("issues", [])
         final_note = review_result.get("final_note", "")
+
+        # 确保 revision_count 是整数
+        revision_count = int(revision_count) if revision_count else 0
 
         # 新轮次 = 当前轮次 + 1
         new_round = revision_count + 1

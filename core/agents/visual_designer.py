@@ -126,9 +126,23 @@ class VisualDesignerAgent(BaseAgent):
 
         thinking, answer, raw = invoke_with_retry(self.llm, messages, max_retries=3)
 
+        # 防御性处理：确保answer是dict格式
+        if isinstance(answer, list):
+            # LLM直接返回了图素材池列表
+            image_pool = answer
+            strategy = ""
+        elif isinstance(answer, dict):
+            # LLM返回了标准格式
+            image_pool = answer.get("图素材池", [])
+            strategy = answer.get("素材池策略", "")
+        else:
+            # 未知格式，使用空列表
+            image_pool = []
+            strategy = str(answer) if answer else ""
+
         return {
-            "image_pool": answer.get("图素材池", []),
-            "strategy": answer.get("素材池策略", ""),
+            "image_pool": image_pool,
+            "strategy": strategy,
             "topic_id": topic.get("id", ""),
             "topic_title": topic.get("选题标题", ""),
             "asset_id": tool_results.get("asset_id", ""),
