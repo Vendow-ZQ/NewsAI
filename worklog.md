@@ -536,3 +536,49 @@ NewsAI/
 
 **最后更新**: 2026-05-12 22:00 SGT  
 **更新者**: Claude（文件夹结构整理）
+
+---
+
+### 2026-05-12 22:15 (文档全面更新)
+
+| 时间 | 执行人 | 动作 | 内容 | 变动/结果 |
+|------|--------|------|------|-----------|
+| 22:10 | Claude | 全面重写 README.md | 更新为项目主入口文档 | 新增项目结构、核心流程、文档索引 |
+| 22:12 | Claude | 重命名核心文档 | 6份核心文档标准化命名 | 更清晰的管理 |
+| 22:13 | Claude | 归档旧文档 | 5份历史文档移至archive/ | 减少干扰 |
+| 22:15 | Claude | 新建 ARCHITECTURE.md | 系统架构文档 | 完整架构描述 |
+
+**文档重命名清单：**
+
+| 旧名称 | 新名称 | 说明 |
+|--------|--------|------|
+| Final_Prompts.md | AGENT_PROMPTS_MASTER.md | 完整Prompt工程文档 |
+| Agent_roster_v2.md | AGENT_ROSTER.md | 9位虚拟员工档案 |
+| Documents_design_v2.md | CONTENT_DESIGN.md | 内容产物设计 |
+| NewsAI_project_v2.md | PROJECT_OVERVIEW.md | 项目概述 |
+| Tables_schema_v2.md | DATABASE_SCHEMA.md | 表结构设计 |
+| KOC_persona.md | KOC_PERSONA.md | KOC人设 |
+
+**归档文档清单（移至docs/archive/）：**
+
+- AGENT_PROMPTS.md（早期简单版本）
+- ByteIntern_Submission.md（实习申请材料）
+- SOP_v2.md（开发过程记录）
+- NewsAI_workspace_v2.md（工作区设计）
+- Document_Implementation_Summary.md（实现摘要）
+
+**新建文档：**
+
+- ARCHITECTURE.md - 系统架构、数据流、设计模式详解
+
+**README.md 新增内容：**
+- 完整的项目结构图
+- 核心流程详解（6步流程）
+- 7张Bitable表说明
+- 文档索引表
+- 最近更新记录
+
+---
+
+**最后更新**: 2026-05-12 22:20 SGT  
+**更新者**: Claude（文档全面更新完成）
