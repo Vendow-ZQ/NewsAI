@@ -87,12 +87,18 @@ class DistributorAgent(BaseAgent):
             koc_record = self.storage.get_by_id("KOC人设", "KOC-001")
             koc = parse_koc_data(koc_record.data) if koc_record else {}
 
-            # 读"分发中"状态的选题
+            # 读"分发中"状态的选题（优先选有ASSET关联的）
             topics = self.storage.query("选题库", limit=10)
             dist_topics = [t.data for t in topics if t.data.get("选题状态") == "分发中"]
             if not dist_topics:
                 raise RuntimeError("没有分发中的选题")
-            topic = dist_topics[0]
+
+            # 优先选择有ASSET关联的选题
+            topic_with_asset = [t for t in dist_topics if t.get("关联资产ID")]
+            if topic_with_asset:
+                topic = topic_with_asset[0]
+            else:
+                topic = dist_topics[0]
 
             # 读 ASSET
             asset_id = topic.get("关联资产ID", "")
