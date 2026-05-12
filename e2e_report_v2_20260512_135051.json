@@ -1,0 +1,86 @@
+{
+  "start_time": "2026-05-12T13:38:10.628335",
+  "agents": [
+    {
+      "agent": "小哨",
+      "status": "PASS",
+      "detail": "写入 21 条热帖",
+      "elapsed": 91.49,
+      "timestamp": "2026-05-12T13:39:44.462438",
+      "trend_count": 21
+    },
+    {
+      "agent": "小编",
+      "status": "PASS",
+      "detail": "生成 3 条选题，选中 TOPIC-20260512-001",
+      "elapsed": 85.14,
+      "timestamp": "2026-05-12T13:41:09.602474",
+      "asset_id": "ASSET-20260512-001"
+    },
+    {
+      "agent": "小文",
+      "status": "PASS",
+      "detail": "1689 字, 6 个配图",
+      "elapsed": 134.63,
+      "timestamp": "2026-05-12T13:43:24.228205"
+    },
+    {
+      "agent": "小图",
+      "status": "PASS",
+      "detail": "6 张图素材",
+      "elapsed": 65.07,
+      "timestamp": "2026-05-12T13:44:29.302688"
+    },
+    {
+      "agent": "小播",
+      "status": "PASS",
+      "detail": "1分40秒, 5 个镜头",
+      "elapsed": 49.82,
+      "timestamp": "2026-05-12T13:45:19.127489"
+    },
+    {
+      "agent": "production_sync",
+      "status": "PASS",
+      "detail": "检查 3 状态",
+      "elapsed": 4.25,
+      "timestamp": "2026-05-12T13:45:24.169363"
+    },
+    {
+      "agent": "小审",
+      "status": "PASS",
+      "detail": "needs_revision, 3 issues",
+      "elapsed": 35.1,
+      "timestamp": "2026-05-12T13:45:59.270890"
+    },
+    {
+      "agent": "小改",
+      "status": "PASS",
+      "detail": "1 处修改",
+      "elapsed": 64.19,
+      "timestamp": "2026-05-12T13:47:03.463517"
+    },
+    {
+      "agent": "小发",
+      "status": "PASS",
+      "detail": "5 个分发文档 (公众号, 小红书, 抖音, 视频号, B站竖屏)",
+      "elapsed": 225.81,
+      "timestamp": "2026-05-12T13:50:49.273966"
+    },
+    {
+      "agent": "小数",
+      "status": "FAIL",
+      "detail": "'>=' not supported between instances of 'str' and 'int'",
+      "elapsed": 1.73,
+      "timestamp": "2026-05-12T13:50:51.006327"
+    }
+  ],
+  "total_time": 758.11,
+  "bugs": [
+    {
+      "agent": "小数",
+      "severity": "P1",
+      "description": "'>=' not supported between instances of 'str' and 'int'",
+      "timestamp": "2026-05-12T13:50:51.006366"
+    }
+  ]
+}

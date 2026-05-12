@@ -1,0 +1,79 @@
+{
+  "start_time": "2026-05-12T14:18:34.031177",
+  "agents": [
+    {
+      "agent": "小哨",
+      "status": "PASS",
+      "detail": "写入 21 条热帖",
+      "elapsed": 102.83,
+      "timestamp": "2026-05-12T14:20:17.643033",
+      "trend_count": 21
+    },
+    {
+      "agent": "小编",
+      "status": "PASS",
+      "detail": "生成 3 条选题，选中 TOPIC-20260512-001",
+      "elapsed": 69.38,
+      "timestamp": "2026-05-12T14:21:27.025697",
+      "asset_id": "ASSET-20260512-001"
+    },
+    {
+      "agent": "小文",
+      "status": "PASS",
+      "detail": "1872 字, 5 个配图",
+      "elapsed": 174.14,
+      "timestamp": "2026-05-12T14:24:21.167699"
+    },
+    {
+      "agent": "小图",
+      "status": "PASS",
+      "detail": "6 张图素材",
+      "elapsed": 65.62,
+      "timestamp": "2026-05-12T14:25:26.786885"
+    },
+    {
+      "agent": "小播",
+      "status": "PASS",
+      "detail": "1分40秒, 6 个镜头",
+      "elapsed": 67.92,
+      "timestamp": "2026-05-12T14:26:34.706632"
+    },
+    {
+      "agent": "production_sync",
+      "status": "PASS",
+      "detail": "检查 3 状态",
+      "elapsed": 4.75,
+      "timestamp": "2026-05-12T14:26:40.250584"
+    },
+    {
+      "agent": "小审",
+      "status": "PASS",
+      "detail": "needs_revision, 3 issues",
+      "elapsed": 39.71,
+      "timestamp": "2026-05-12T14:27:19.964004"
+    },
+    {
+      "agent": "小改",
+      "status": "PASS",
+      "detail": "1 处修改",
+      "elapsed": 41.23,
+      "timestamp": "2026-05-12T14:28:01.197896"
+    },
+    {
+      "agent": "小发",
+      "status": "PASS",
+      "detail": "5 个分发文档 (公众号, 小红书, 抖音, 视频号, B站竖屏)",
+      "elapsed": 172.71,
+      "timestamp": "2026-05-12T14:30:53.911877"
+    },
+    {
+      "agent": "小数",
+      "status": "PASS",
+      "detail": "DATA DATA-20260512-001, 评分 0.86",
+      "elapsed": 129.32,
+      "timestamp": "2026-05-12T14:33:03.236258"
+    }
+  ],
+  "total_time": 868.44,
+  "bugs": []
+}

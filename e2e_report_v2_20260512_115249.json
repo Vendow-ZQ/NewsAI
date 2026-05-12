@@ -1,0 +1,92 @@
+{
+  "start_time": "2026-05-12T11:40:04.275370",
+  "agents": [
+    {
+      "agent": "小哨",
+      "status": "PASS",
+      "detail": "写入 21 条热帖",
+      "elapsed": 123.65,
+      "timestamp": "2026-05-12T11:42:08.571746",
+      "trend_count": 21
+    },
+    {
+      "agent": "小编",
+      "status": "PASS",
+      "detail": "生成 3 条选题，选中 TOPIC-20260512-001",
+      "elapsed": 82.92,
+      "timestamp": "2026-05-12T11:43:31.488134",
+      "asset_id": "ASSET-20260512-001"
+    },
+    {
+      "agent": "小文",
+      "status": "PASS",
+      "detail": "1487 字, 5 个配图",
+      "elapsed": 326.58,
+      "timestamp": "2026-05-12T11:48:58.068772"
+    },
+    {
+      "agent": "小图",
+      "status": "PASS",
+      "detail": "6 张图素材",
+      "elapsed": 60.44,
+      "timestamp": "2026-05-12T11:49:58.506317"
+    },
+    {
+      "agent": "小播",
+      "status": "PASS",
+      "detail": "1分40秒, 5 个镜头",
+      "elapsed": 78.63,
+      "timestamp": "2026-05-12T11:51:17.137787"
+    },
+    {
+      "agent": "production_sync",
+      "status": "PASS",
+      "detail": "检查 3 状态",
+      "elapsed": 3.95,
+      "timestamp": "2026-05-12T11:51:21.909202"
+    },
+    {
+      "agent": "小审",
+      "status": "PASS",
+      "detail": "needs_revision, 3 issues",
+      "elapsed": 40.68,
+      "timestamp": "2026-05-12T11:52:02.585706"
+    },
+    {
+      "agent": "小改",
+      "status": "PASS",
+      "detail": "1 处修改",
+      "elapsed": 42.49,
+      "timestamp": "2026-05-12T11:52:45.070808"
+    },
+    {
+      "agent": "小发",
+      "status": "FAIL",
+      "detail": "ASSET  不存在",
+      "elapsed": 1.61,
+      "timestamp": "2026-05-12T11:52:46.677325"
+    },
+    {
+      "agent": "小数",
+      "status": "FAIL",
+      "detail": "'>=' not supported between instances of 'str' and 'int'",
+      "elapsed": 2.47,
+      "timestamp": "2026-05-12T11:52:49.147627"
+    }
+  ],
+  "total_time": 764.24,
+  "bugs": [
+    {
+      "agent": "小发",
+      "severity": "P1",
+      "description": "ASSET  不存在",
+      "timestamp": "2026-05-12T11:52:46.677338"
+    },
+    {
+      "agent": "小数",
+      "severity": "P1",
+      "description": "'>=' not supported between instances of 'str' and 'int'",
+      "timestamp": "2026-05-12T11:52:49.147650"
+    }
+  ]
+}

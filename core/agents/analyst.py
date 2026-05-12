@@ -65,26 +65,31 @@ class AnalystAgent(BaseAgent):
     def _invoke_tools(self, context: dict, upstream_data: dict) -> dict:
         """读 mock 数据按选题预估爆点强度匹配档位"""
         topic = upstream_data["topic"]
-        priority = topic.get("推荐优先级", 5)
+        priority = int(topic.get("推荐优先级", 5) or 5)
 
         # v3 修复 Bug 8：读 mock 文件不 random
         try:
             with open("mock_data/analytics_mock.json", encoding="utf-8") as f:
                 mock_pool = json.load(f)
+            # 如果文件是列表，直接使用；如果是字典（按档位分类），根据priority选择档位
+            if isinstance(mock_pool, list):
+                # 文件是列表格式，直接使用整个列表
+                tier_data = mock_pool
+                tier = "全部"
+            else:
+                # 按选题优先级匹配档位
+                if priority >= 8:
+                    tier = "高表现"
+                elif priority >= 5:
+                    tier = "中表现"
+                else:
+                    tier = "低表现"
+                tier_data = mock_pool.get(tier, [])
         except Exception as e:
             print(f"[小数] 读取 analytics_mock.json 失败: {e}")
             # fallback: 生成模拟数据
             return {"mock_data": self._generate_fallback_data(priority)}
 
-        # 按选题优先级匹配档位
-        if priority >= 8:
-            tier = "高表现"
-        elif priority >= 5:
-            tier = "中表现"
-        else:
-            tier = "低表现"
-
-        tier_data = mock_pool.get(tier, [])
         if not tier_data:
             # fallback
             return {"mock_data": self._generate_fallback_data(priority)}
@@ -137,8 +142,14 @@ class AnalystAgent(BaseAgent):
             {"role": "system", "content": self.SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ]
-
         thinking, answer, raw = invoke_with_retry(self.llm, messages, max_retries=3)
+        
+        # 防御性处理：确保answer是字典格式
+        if isinstance(answer, str):
+            try:
+                answer = json.loads(answer)
+            except:
+                answer = {"综合评分": 0.5, "爆点验证": "未爆", "平台表现": {}, "成败分析": "", "选题建议": []}
 
         return {
             "analysis": answer,
@@ -247,7 +258,7 @@ B站：播放={mock_data.get('B站_播放量', 0)}，点赞={mock_data.get('B站
                 "B站_播放量": mock_data.get("B站_播放量", 0),
                 "B站_点赞数": mock_data.get("B站_点赞数", 0),
                 "B站_投币数": mock_data.get("B站_投币数", 0),
-                "综合评分": analysis.get("综合评分", 0.5),
+                "综合评分": float(analysis.get("综合评分", 0.5)) if isinstance(analysis.get("综合评分"), str) else analysis.get("综合评分", 0.5),
                 "爆点验证": analysis.get("爆点验证", "未爆"),
                 "数据采集时间": current_timestamp_ms(),
                 "数据状态": "已分析",

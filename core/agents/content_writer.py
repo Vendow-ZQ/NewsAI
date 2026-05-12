@@ -68,14 +68,23 @@ class ContentWriterAgent(BaseAgent):
             koc_record = self.storage.get_by_id("KOC人设", "KOC-001")
             koc = parse_koc_data(koc_record.data) if koc_record else {}
 
-            # 读"已选中"状态的选题
-            topics = self.storage.query("选题库", limit=10)
-            selected_topics = [t.data for t in topics if t.data.get("选题状态") == "已选中"]
+            # 优先使用 context 传入的 topic_id
+            topic_id = context.get("topic_id", "")
+            topic = None
 
-            if not selected_topics:
+            if topic_id:
+                topic_record = self.storage.get_by_id("选题库", topic_id)
+                topic = topic_record.data if topic_record else None
+
+            # 如果没有context，查询"已选中"状态的选题
+            if not topic:
+                topics = self.storage.query("选题库", limit=10)
+                selected_topics = [t.data for t in topics if t.data.get("选题状态") == "已选中"]
+                if selected_topics:
+                    topic = selected_topics[0]
+
+            if not topic:
                 raise RuntimeError("没有'已选中'状态的选题")
-
-            topic = selected_topics[0]
 
             # 读关联热帖（事实核查用）
             trend_ids = []

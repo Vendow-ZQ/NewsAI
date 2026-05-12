@@ -398,7 +398,7 @@ async def main():
     checks = [
         ("DATA_ID", lambda r: r.get("data_id"), "无DATA_ID"),
         ("分析结果", lambda r: r.get("analysis"), "无分析结果"),
-        ("综合评分", lambda r: 0 <= r.get("analysis", {}).get("综合评分", -1) <= 1, "综合评分无效"),
+        ("综合评分", lambda r: 0 <= float(r.get("analysis", {}).get("综合评分", -1)) <= 1, "综合评分无效"),
     ]
     result, elapsed, err, issues = await run_agent(
         AnalystAgent, "小数", storage, llm, context, validation_checks=checks

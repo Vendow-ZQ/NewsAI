@@ -73,19 +73,35 @@ class VisualDesignerAgent(BaseAgent):
             koc_record = self.storage.get_by_id("KOC人设", "KOC-001")
             koc = parse_koc_data(koc_record.data) if koc_record else {}
 
-            # 读"生产中"状态的选题
-            topics = self.storage.query("选题库", limit=10)
-            active_topics = [t.data for t in topics if t.data.get("选题状态") in ["已选中", "生产中"]]
-            if not active_topics:
-                raise RuntimeError("没有活跃选题")
-            topic = active_topics[0]
-
-            # 读 ASSET
-            asset_id = topic.get("关联资产ID", "")
+            # 优先使用 context 传入的 topic_id 和 asset_id
+            topic_id = context.get("topic_id", "")
+            asset_id = context.get("asset_id", "")
+            topic = None
             asset = None
+
+            if topic_id:
+                topic_record = self.storage.get_by_id("选题库", topic_id)
+                topic = topic_record.data if topic_record else None
+
             if asset_id:
                 asset_record = self.storage.get_by_id("内容资产库", asset_id)
-                asset = asset_record.data if asset_record else {}
+                asset = asset_record.data if asset_record else None
+
+            # 如果没有context，查询["已选中", "生产中"]状态的选题
+            if not topic:
+                topics = self.storage.query("选题库", limit=10)
+                active_topics = [t.data for t in topics if t.data.get("选题状态") in ["已选中", "生产中"]]
+                if active_topics:
+                    topic = active_topics[0]
+                    # 从topic获取asset_id
+                    if not asset_id:
+                        asset_id = topic.get("关联资产ID", "")
+                        if asset_id:
+                            asset_record = self.storage.get_by_id("内容资产库", asset_id)
+                            asset = asset_record.data if asset_record else {}
+
+            if not topic:
+                raise RuntimeError("没有活跃选题")
 
             # 读小文的长文（如果有）
             long_form_content = ""

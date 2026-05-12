@@ -87,26 +87,36 @@ class DistributorAgent(BaseAgent):
             koc_record = self.storage.get_by_id("KOC人设", "KOC-001")
             koc = parse_koc_data(koc_record.data) if koc_record else {}
 
-            # 读"分发中"状态的选题（优先选有ASSET关联的）
-            topics = self.storage.query("选题库", limit=10)
-            dist_topics = [t.data for t in topics if t.data.get("选题状态") == "分发中"]
-            if not dist_topics:
-                raise RuntimeError("没有分发中的选题")
+            # 优先使用 context 传入的 topic_id 和 asset_id
+            topic_id = context.get("topic_id", "")
+            asset_id = context.get("asset_id", "")
 
-            # 优先选择有ASSET关联的选题
-            topic_with_asset = [t for t in dist_topics if t.get("关联资产ID")]
-            if topic_with_asset:
-                topic = topic_with_asset[0]
-            else:
-                topic = dist_topics[0]
-
-            # 读 ASSET
-            asset_id = topic.get("关联资产ID", "")
+            topic = None
             asset = None
+
+            if topic_id:
+                topic_record = self.storage.get_by_id("选题库", topic_id)
+                topic = topic_record.data if topic_record else None
+
             if asset_id:
                 asset_record = self.storage.get_by_id("内容资产库", asset_id)
-                asset = asset_record.data if asset_record else {}
+                asset = asset_record.data if asset_record else None
 
+            # 如果 context 没有，尝试读"分发中"状态的选题
+            if not topic:
+                topics = self.storage.query("选题库", limit=10)
+                dist_topics = [t.data for t in topics if t.data.get("选题状态") == "分发中"]
+                if dist_topics:
+                    topic = dist_topics[0]
+                    # 如果没有asset_id，从topic获取
+                    if not asset_id:
+                        asset_id = topic.get("关联资产ID", "")
+                        if asset_id:
+                            asset_record = self.storage.get_by_id("内容资产库", asset_id)
+                            asset = asset_record.data if asset_record else None
+
+            if not topic:
+                raise RuntimeError("没有分发中的选题")
             if not asset:
                 raise RuntimeError(f"ASSET {asset_id} 不存在")
 
@@ -198,7 +208,15 @@ class DistributorAgent(BaseAgent):
             {"role": "user", "content": user_step1},
         ]
         _, step1_answer, _ = invoke_with_retry(self.llm, messages_step1, max_retries=3)
-        platform_versions = step1_answer
+        # 防御性处理：确保是字典格式
+        if isinstance(step1_answer, str):
+            try:
+                import json
+                platform_versions = json.loads(step1_answer)
+            except:
+                platform_versions = {}
+        else:
+            platform_versions = step1_answer
 
         # === 步骤 2：出分发策略 ===
         print("[小发] 步骤 2：出分发策略...")
@@ -211,7 +229,15 @@ class DistributorAgent(BaseAgent):
             {"role": "user", "content": user_step2},
         ]
         _, step2_answer, _ = invoke_with_retry(self.llm, messages_step2, max_retries=3)
-        distribution_plan = step2_answer
+        # 防御性处理：确保是字典格式
+        if isinstance(step2_answer, str):
+            try:
+                import json
+                distribution_plan = json.loads(step2_answer)
+            except:
+                distribution_plan = {"平台分发计划": []}
+        else:
+            distribution_plan = step2_answer
 
         return {
             "platform_versions": platform_versions,
@@ -481,14 +507,20 @@ B站竖屏（视频）：
             if content.get("配图绑定"):
                 md += "## 配图绑定\n\n"
                 for pb in content["配图绑定"]:
-                    md += f"- {pb.get('占位', '')} → {pb.get('选用', '')}\n"
+                    if isinstance(pb, dict):
+                        md += f"- {pb.get('占位', '')} → {pb.get('选用', '')}\n"
+                    else:
+                        md += f"- {pb}\n"
 
         elif platform_name == "小红书":
             md += content.get("正文", "") + "\n\n"
             if content.get("配图绑定"):
                 md += "## 配图绑定\n\n"
                 for pb in content["配图绑定"]:
-                    md += f"- {pb.get('位置', '')} → {pb.get('选用', '')}\n"
+                    if isinstance(pb, dict):
+                        md += f"- {pb.get('位置', '')} → {pb.get('选用', '')}\n"
+                    else:
+                        md += f"- {pb}\n"
             md += f"\n**标签**: {content.get('标签', '')}\n"
 
         elif platform_name == "抖音":
@@ -497,10 +529,13 @@ B站竖屏（视频）：
             clip = content.get("剪辑指引", {})
             if clip:
                 md += "## 剪辑指引\n\n"
-                md += f"- 保留镜头: {clip.get('保留镜头', [])}\n"
-                md += f"- 删减镜头: {clip.get('删减镜头', [])}\n"
-                md += f"- 时长目标: {clip.get('时长目标', '')}\n"
-                md += f"- 节奏调整: {clip.get('节奏调整', '')}\n"
+                if isinstance(clip, dict):
+                    md += f"- 保留镜头: {clip.get('保留镜头', [])}\n"
+                    md += f"- 删减镜头: {clip.get('删减镜头', [])}\n"
+                    md += f"- 时长目标: {clip.get('时长目标', '')}\n"
+                    md += f"- 节奏调整: {clip.get('节奏调整', '')}\n"
+                else:
+                    md += f"- {clip}\n"
 
         elif platform_name in ("视频号", "B站竖屏"):
             md += f"**标题**: {content.get('标题', '')}\n\n"
@@ -512,9 +547,12 @@ B站竖屏（视频）：
             clip = content.get("剪辑指引", {})
             if clip:
                 md += "## 剪辑指引\n\n"
-                md += f"- 保留镜头: {clip.get('保留镜头', '')}\n"
-                md += f"- 时长目标: {clip.get('时长目标', '')}\n"
-                md += f"- 节奏调整: {clip.get('节奏调整', '')}\n"
+                if isinstance(clip, dict):
+                    md += f"- 保留镜头: {clip.get('保留镜头', '')}\n"
+                    md += f"- 时长目标: {clip.get('时长目标', '')}\n"
+                    md += f"- 节奏调整: {clip.get('节奏调整', '')}\n"
+                else:
+                    md += f"- {clip}\n"
 
         # 添加分发策略信息
         if isinstance(distribution_plan, dict):
