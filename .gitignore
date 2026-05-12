@@ -63,6 +63,12 @@ output/
 
 # Project specific
 .id_mapping.json
-worklog.md
+
+# Data and logs
+data/
+logs/
+reports/
+
+# Temp files
 EOF
-explain_limitation.md
+PYEOF

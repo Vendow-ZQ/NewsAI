@@ -493,3 +493,46 @@ editor.py _read_upstream()
 
 **最后更新**: 2026-05-07 02:30 SGT  
 **更新者**: Claude（Agent Prompts v2.0更新完成）
+
+---
+
+### 2026-05-12 (文件夹结构整理)
+
+| 时间 | 执行人 | 动作 | 内容 | 变动/结果 |
+|------|--------|------|------|-----------|
+| 21:45 | Claude | 重构文件夹结构 | 整理散乱文件到标准目录 | 43个文件归位，根目录保持简洁 |
+
+**整理详情：**
+
+| 文件类型 | 原位置 | 新位置 | 文件数 |
+|----------|--------|--------|--------|
+| 文档文件 | 根目录 | docs/ | 5个 (AGENT_PROMPTS.md, Final_Prompts.md等) |
+| 测试脚本 | 根目录 | tests/ | 5个 (e2e_test_v2.py等) |
+| 测试报告 | 根目录 | reports/ | 16个 (e2e_report_*.json) |
+| 数据文件 | 根目录 | data/ | 1个 (.id_mapping.json) |
+| 归档脚本 | 根目录 | scripts/archive/ | 16个 (旧版run_*.py) |
+| 空文件 | 根目录 | 删除 | 2个 (EOF, PYEOF) |
+
+**保持根目录简洁，仅保留核心入口：**
+- `bootstrap.py` - 项目初始化
+- `run.py` - 主运行入口
+- `worklog.md` - 工作日志
+- `README.md` - 项目说明
+- `QUICKSTART.md` - 快速开始
+
+**新增目录结构：**
+```
+NewsAI/
+├── data/           # 数据文件（gitignored）
+├── logs/           # 日志文件（gitignored）
+├── reports/        # 测试报告（gitignored）
+├── scripts/archive/# 归档脚本
+└── tests/          # 测试文件
+```
+
+**更新：** .gitignore调整，移除worklog.md的忽略，添加data/、logs/、reports/目录忽略
+
+---
+
+**最后更新**: 2026-05-12 22:00 SGT  
+**更新者**: Claude（文件夹结构整理）
