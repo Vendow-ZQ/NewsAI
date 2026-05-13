@@ -103,55 +103,63 @@ def create_script_writer_node(storage: Any, llm: Any):
     return node
 
 
-# production_sync 节点（v3 新增）
+# production_sync 节点（v3 修复：真正阻断未完成的流程）
 def create_production_sync_node(storage: Any, llm: Any):
     """创建 production_sync 节点（生产组状态同步）。
 
     检查 ASSET 表中 3 个生产状态是否都为"已完成"。
     如果是，更新 TOPIC 状态为"审改中"，ASSET 生产完成时间。
+
+    v3.1 关键修复：
+    - 之前 RuntimeError 被外层的 try-except 捕获，导致 LangGraph 认为节点成功，
+      继续执行 production_sync -> 小审，审改提前启动。
+    - 现在"检查完成"逻辑在 try-except 外，RuntimeError 真正抛出，LangGraph 终止执行。
     """
     def node(state: NewsAIState) -> Dict[str, Any]:
+        asset_id = state.current_asset_id
+        if not asset_id:
+            return {"execution_log": _make_log("production_sync", "跳过", reason="无 asset_id")}
+
+        # 读取 ASSET（允许失败，返回错误但不阻断流程）
         try:
-            asset_id = state.current_asset_id
-            if not asset_id:
-                return {"execution_log": _make_log("production_sync", "跳过", reason="无 asset_id")}
-
-            # 读取 ASSET 记录
             asset = storage.get_by_id("内容资产库", asset_id)
-            if not asset:
-                return {"execution_log": _make_log("production_sync", "失败", reason="ASSET 不存在")}
+        except Exception as e:
+            return {"execution_log": _make_log("production_sync", "失败", error=f"读取ASSET失败:{e}"), "errors": [str(e)]}
 
-            asset_data = asset.data
-            text_status = asset_data.get("文案状态", "")
-            image_status = asset_data.get("配图状态", "")
-            video_status = asset_data.get("视频状态", "")
+        if not asset:
+            return {"execution_log": _make_log("production_sync", "失败", reason="ASSET 不存在")}
 
-            all_done = (text_status == "已完成" and image_status == "已完成" and video_status == "已完成")
+        asset_data = asset.data
+        text_status = asset_data.get("文案状态", "")
+        image_status = asset_data.get("配图状态", "")
+        video_status = asset_data.get("视频状态", "")
 
-            if all_done:
-                from core.agents.base import current_timestamp_ms
-                # 更新 ASSET
-                storage.update("内容资产库", asset_id, {
-                    "生产完成时间": current_timestamp_ms(),
+        all_done = (text_status == "已完成" and image_status == "已完成" and video_status == "已完成")
+
+        if not all_done:
+            # v3.1 修复关键：RuntimeError 不被内部 try-except 捕获
+            # 真正抛出异常，LangGraph 会终止执行，不会继续到小审
+            error_msg = (
+                f"[production_sync] 生产组未完成，阻断流程。"
+                f"文案={text_status}, 配图={image_status}, 视频={video_status}."
+                f"ASSET={asset_id}"
+            )
+            print(error_msg)
+            raise RuntimeError(error_msg)
+
+        # 全部完成 → 同步状态（这些操作失败不应阻断，因为已确认完成）
+        try:
+            from core.agents.base import current_timestamp_ms
+            storage.update("内容资产库", asset_id, {
+                "生产完成时间": current_timestamp_ms(),
+            })
+            topic_id = state.current_topic_id
+            if topic_id:
+                storage.update("选题库", topic_id, {
+                    "选题状态": "审改中",
                 })
-                # 更新 TOPIC
-                topic_id = state.current_topic_id
-                if topic_id:
-                    storage.update("选题库", topic_id, {
-                        "选题状态": "审改中",
-                    })
-                print(f"[production_sync] 3 个生产状态全完成，触发审改阶段")
-                return {"execution_log": _make_log("production_sync", "完成", all_done=True)}
-            else:
-                # v3.1 修复：LangGraph 边是无条件的，返回"等待"不会阻止流程继续
-                # 必须抛异常来阻断，防止审改/分发读到不完整的内容资产
-                error_msg = (
-                    f"[production_sync] 生产组未完成，阻断流程。"
-                    f"文案={text_status}, 配图={image_status}, 视频={video_status}."
-                    f"ASSET={asset_id}"
-                )
-                print(error_msg)
-                raise RuntimeError(error_msg)
+            print(f"[production_sync] 3 个生产状态全完成，触发审改阶段")
+            return {"execution_log": _make_log("production_sync", "完成", all_done=True)}
         except Exception as e:
             return {"execution_log": _make_log("production_sync", "失败", error=str(e)), "errors": [str(e)]}
     return node

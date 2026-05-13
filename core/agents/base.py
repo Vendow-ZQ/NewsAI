@@ -88,27 +88,25 @@ class BaseAgent(ABC):
         pass
 
     def _log_work(self, context: dict, result: dict):
-        """写入 Agent 协作日志。
-
-        所有 Agent 的执行记录都会写入"Agent协作日志"表，便于追踪和调试。
-        """
-        # 计算耗时
+        """写入 Agent 协作日志。"""
+        # 解析开始时间
         start_time_str = context.get("start_time", "")
+        start_ts = current_timestamp_ms()
         try:
             start_dt = datetime.fromisoformat(start_time_str)
+            start_ts = int(start_dt.timestamp() * 1000)
             elapsed_seconds = (datetime.now() - start_dt).total_seconds()
         except Exception:
             elapsed_seconds = 0
 
-        # 获取关联业务ID
+        end_ts = current_timestamp_ms()
+
         related_id = ""
         if isinstance(result, dict):
             related_id = result.get("id", "") or result.get("topic_id", "") or result.get("asset_id", "")
 
-        # 获取任务类型
         task_type = self._get_task_type()
 
-        # 获取输出摘要
         output_summary = ""
         if isinstance(result, dict):
             if "count" in result:
@@ -131,7 +129,7 @@ class BaseAgent(ABC):
             output_summary = "Completed"
 
         log_entry = {
-            "id": f"LOG-{datetime.now().strftime('%Y%m%d-%H%M')}-{self.name}",
+            "id": f"LOG-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{self.name}",
             "AgentID": self._get_agent_id(),
             "Agent花名": str(self.name),
             "任务类型": task_type,
@@ -139,14 +137,14 @@ class BaseAgent(ABC):
             "输入摘要": f"{self.name} 执行 {task_type} 任务",
             "输出摘要": output_summary,
             "执行状态": "成功",
-            "耗时秒数": elapsed_seconds,
-            "执行时间": int(time.time() * 1000),
+            "开始时间": start_ts,
+            "结束时间": end_ts,
+            "耗时秒数": round(elapsed_seconds, 1),
         }
         try:
             self.storage.create("Agent协作日志", log_entry)
             print(f"[日志] {self.name}: 成功写入Agent协作日志")
         except Exception as e:
-            # 日志写入失败不应影响主流程
             print(f"[警告] {self.name}: 写入Agent协作日志失败: {e}")
 
     def _get_agent_id(self) -> str:
@@ -167,14 +165,14 @@ class BaseAgent(ABC):
     def _get_task_type(self) -> str:
         """获取任务类型，用于 Agent 协作日志。"""
         task_type_map = {
-            "TrendScout": "信源抓取",
-            "TopicCurator": "选题筛选",
-            "ContentWriter": "内容撰写",
-            "VisualDesigner": "配图生成",
-            "ScriptWriter": "脚本撰写",
-            "Reviewer": "内容审查",
-            "Editor": "内容修改",
-            "Distributor": "分发计划",
+            "TrendScout": "爬取热点",
+            "TopicCurator": "选题",
+            "ContentWriter": "写作",
+            "VisualDesigner": "写Prompt",
+            "ScriptWriter": "写脚本",
+            "Reviewer": "审查",
+            "Editor": "修改",
+            "Distributor": "分发",
             "Analyst": "数据分析",
         }
         class_name = self.__class__.__name__

@@ -190,6 +190,7 @@ TOPIC_FIELDS: List[Dict[str, Any]] = [
     make_field("选题角度", FIELD_TYPE_TEXT, required=True),
     make_field("预估爆点", FIELD_TYPE_TEXT, required=True),
     make_field("预估受众", FIELD_TYPE_TEXT, required=True),
+    make_field("原文摘要", FIELD_TYPE_TEXT),              # 核心热帖摘要，作为选题的事实依据
     make_field("钩子类型", FIELD_TYPE_SINGLE_SELECT, required=True,
                options=["数字", "反差", "提问", "身份代入", "时效"]),
     make_field("推荐优先级", FIELD_TYPE_NUMBER, required=True),
@@ -450,16 +451,17 @@ LOG_FIELDS: List[Dict[str, Any]] = [
     make_field("AgentID", FIELD_TYPE_TEXT, required=True),
     make_field("Agent花名", FIELD_TYPE_TEXT, required=True),
     make_field("任务类型", FIELD_TYPE_SINGLE_SELECT, required=True,
-               options=["信息采集", "选题策划", "内容撰写", "视觉设计", "脚本编写", "内容审核", "内容修改", "分发计划", "数据分析"]),
+               options=["爬取热点", "选题", "写作", "写Prompt", "写脚本", "审查", "修改", "分发", "数据分析"]),
     make_field("关联业务ID", FIELD_TYPE_TEXT),
     make_field("输入摘要", FIELD_TYPE_TEXT, required=True),
     make_field("输出摘要", FIELD_TYPE_TEXT, required=True),
     make_field("执行状态", FIELD_TYPE_SINGLE_SELECT, required=True,
                options=["成功", "失败", "进行中", "已取消"]),
+    make_field("开始时间", FIELD_TYPE_DATETIME, required=True),
+    make_field("结束时间", FIELD_TYPE_DATETIME, required=True),
     make_field("耗时秒数", FIELD_TYPE_NUMBER),
     make_field("Token消耗", FIELD_TYPE_NUMBER),
     make_field("错误信息", FIELD_TYPE_TEXT),
-    make_field("执行时间", FIELD_TYPE_DATETIME, required=True),
 ]
 
 

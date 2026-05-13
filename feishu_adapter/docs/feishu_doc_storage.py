@@ -68,8 +68,8 @@ class FeishuDocStorage(DocStorage):
         if not blocks:
             return
 
-        # 飞书单次最多写入 100 个 block
-        batch_size = 100
+        # 飞书单次最多写入 50 个 block（实测 50 OK，55+ 会报 99992402）
+        batch_size = 50
         for i in range(0, len(blocks), batch_size):
             batch = blocks[i:i + batch_size]
             resp = self.client.docx.v1.document_block_children.create(
@@ -100,6 +100,70 @@ class FeishuDocStorage(DocStorage):
         Returns:
             文档纯文本内容
         """
+
+        def _get_text_elements(block) -> list:
+            """获取 block 的 Text 对象（含 elements 列表）。
+
+            飞书 SDK 中不同 block_type 对应不同属性名：
+            - type=2 (text)     -> block.text
+            - type=3 (heading1) -> block.heading1
+            - type=4 (heading2) -> block.heading2
+            - type=5 (heading3) -> block.heading3
+            - type=12 (bullet)  -> block.bullet
+            - type=13 (ordered) -> block.ordered
+            - type=15 (quote)   -> block.quote
+            - type=22 (code)    -> block.code
+            """
+            bt = block.block_type
+            attr_map = {
+                2: "text",
+                3: "heading1",
+                4: "heading2",
+                5: "heading3",
+                12: "bullet",
+                13: "ordered",
+                15: "quote",
+                22: "code",
+            }
+            attr_name = attr_map.get(bt)
+            if not attr_name:
+                return []
+            text_obj = getattr(block, attr_name, None)
+            if not text_obj:
+                return []
+            # code block 结构不同: block.code 直接是 Text，但其他 block 也是 Text
+            if bt == 22 and hasattr(text_obj, "code_block"):
+                # code block 的 elements 在 code_block 下
+                cb = getattr(text_obj, "code_block", None)
+                if cb and hasattr(cb, "elements"):
+                    return cb.elements or []
+                return []
+            if hasattr(text_obj, "elements"):
+                return text_obj.elements or []
+            return []
+
+        def _extract_text(elements: list) -> str:
+            """从 TextElement 列表提取纯文本。
+
+            关键修复：TextElement 没有 .text 属性，内容在 .text_run.content 中。
+            """
+            parts = []
+            for elem in elements:
+                # 优先取 text_run.content（最常用）
+                tr = getattr(elem, "text_run", None)
+                if tr:
+                    content = getattr(tr, "content", "")
+                    if content:
+                        parts.append(content)
+                    continue
+                # 备用：text 属性（某些 SDK 版本可能有）
+                t = getattr(elem, "text", None)
+                if t:
+                    content = getattr(t, "content", "")
+                    if content:
+                        parts.append(content)
+            return "".join(parts)
+
         try:
             # 获取文档块列表
             resp = self.client.docx.v1.document_block.list(
@@ -112,37 +176,44 @@ class FeishuDocStorage(DocStorage):
             if not resp.success():
                 return f"[读取文档失败: {resp.msg}]"
 
+            if not resp.data or not resp.data.items:
+                return ""
+
             # 提取文本内容
             texts = []
             for block in resp.data.items:
                 try:
-                    block_type = block.block_type
-                    if block_type == 2:  # text block
-                        text_content = block.text.elements[0].text.content if block.text.elements else ""
-                        texts.append(text_content)
-                    elif block_type in [3, 4, 5]:  # heading
-                        # 安全访问heading属性
-                        if hasattr(block, 'heading') and block.heading and hasattr(block.heading, 'elements'):
-                            heading_content = block.heading.elements[0].text.content if block.heading.elements else ""
-                            texts.append(f"# {heading_content}")
-                    elif block_type == 6:  # list
-                        if hasattr(block, 'bullet') and block.bullet and hasattr(block.bullet, 'elements'):
-                            list_content = block.bullet.elements[0].text.content if block.bullet.elements else ""
-                            texts.append(f"- {list_content}")
-                    elif block_type == 7:  # ordered list
-                        if hasattr(block, 'ordered') and block.ordered and hasattr(block.ordered, 'elements'):
-                            list_content = block.ordered.elements[0].text.content if block.ordered.elements else ""
-                            texts.append(f"1. {list_content}")
-                    elif block_type == 11:  # quote
-                        if hasattr(block, 'quote') and block.quote and hasattr(block.quote, 'elements'):
-                            quote_content = block.quote.elements[0].text.content if block.quote.elements else ""
-                            texts.append(f"> {quote_content}")
-                    elif block_type == 14:  # code block
-                        if hasattr(block, 'code') and block.code:
-                            code_content = block.code.code_block.elements[0].text.content if block.code.code_block.elements else ""
-                            texts.append(f"```\n{code_content}\n```")
-                except Exception as e:
-                    # 跳过无法解析的block
+                    bt = block.block_type
+
+                    # 跳过根 page 块 (type=1)，它的 children 只是 ID 列表
+                    if bt == 1:
+                        continue
+
+                    elements = _get_text_elements(block)
+                    text = _extract_text(elements)
+
+                    if not text:
+                        continue
+
+                    # 根据类型加前缀
+                    if bt == 3:
+                        texts.append(f"# {text}")
+                    elif bt == 4:
+                        texts.append(f"## {text}")
+                    elif bt == 5:
+                        texts.append(f"### {text}")
+                    elif bt == 12:
+                        texts.append(f"- {text}")
+                    elif bt == 13:
+                        texts.append(f"1. {text}")
+                    elif bt == 15:
+                        texts.append(f"> {text}")
+                    elif bt == 22:
+                        texts.append(f"```\n{text}\n```")
+                    else:
+                        texts.append(text)
+                except Exception:
+                    # 跳过无法解析的 block
                     continue
 
             return "\n".join(texts)

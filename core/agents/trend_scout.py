@@ -247,6 +247,7 @@ class TrendScoutAgent(BaseAgent):
                 "信源ID": post.get("_source_file", "unknown"),
                 "信源平台": _extract_platform(post),
                 "标题": post.get("标题", post.get("name", post.get("repo", "无标题"))),
+                "原文链接": post.get("原文链接", post.get("链接", post.get("hn链接", post.get("pdf链接", "")))),
                 "原文摘要": post.get("摘要", post.get("内容摘要", post.get("description", "")))[:500],
                 "原文语言": _detect_language(post),
                 "主题标签": evaluation.get("主题标签", ["其他"]),

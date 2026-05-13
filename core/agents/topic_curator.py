@@ -185,16 +185,38 @@ class TopicCuratorAgent(BaseAgent):
         """v3 改造：写 3 条 TOPIC + 自动选最优 + 创建 ASSET"""
         candidates = result["candidates"]
 
+        # 读取热帖数据用于提取原文摘要
+        trends = self.storage.query("热帖库", limit=50)
+        trend_map = {t.data.get("id", ""): t.data for t in trends}
+
         # 1. 写 3 条选题（状态="待选择"）
         topic_ids = []
         for cand in candidates:
             topic_id = IDGenerator.generate("TOPIC")
+
+            # 从关联热帖提取原文摘要作为选题的事实依据
+            related_ids = cand.get("关联热帖_ids", [])
+            if isinstance(related_ids, str):
+                try:
+                    related_ids = json.loads(related_ids)
+                except Exception:
+                    related_ids = []
+            source_abstract = ""
+            for tid in related_ids:
+                trend = trend_map.get(tid)
+                if trend:
+                    abstract = trend.get("原文摘要", "")
+                    if abstract:
+                        source_abstract = abstract[:500]
+                        break
+
             record = {
                 "id": topic_id,
                 "选题标题": cand["选题标题"],
                 "选题角度": cand["选题角度"],
                 "预估爆点": cand["预估爆点"],
                 "预估受众": cand["预估受众"],
+                "原文摘要": source_abstract,
                 "钩子类型": cand["钩子类型"],
                 "推荐优先级": cand["推荐优先级"],
                 "关联热帖IDs": json.dumps(cand.get("关联热帖_ids", []), ensure_ascii=False),
