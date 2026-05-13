@@ -85,110 +85,37 @@ def to_feishu_datetime(iso_string: str) -> int:
 
 def transform_seed_data(table_name: str, raw_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    将mock数据转换为飞书Base字段格式
+    将 tables.py 中的种子数据转换为飞书Base字段格式。
 
-    处理字段映射和数据转换：
-    - 信源配置: mock格式 -> tables.py定义格式
-    - Agent花名册: mock格式 -> tables.py定义格式
-    - 热帖库: mock格式 -> tables.py定义格式
+    只做通用转换：
+    - 日期时间字符串 -> 毫秒时间戳
+    - 确保布尔值正确
 
-    注意: 飞书Base日期时间字段需要毫秒级时间戳(整数)
+    字段映射已在 tables.py 的 *_SEED_DATA 中完成，此处不再转换。
     """
     transformed = []
     now_ts = int(datetime.now().timestamp() * 1000)
 
     for item in raw_data:
         try:
-            if table_name == "信源配置":
-                # 从 mock_data/src_sources.json 转换
-                record = {
-                    "id": item.get("id", ""),
-                    "信源名称": item.get("信源名称", ""),
-                    "平台": item.get("信源名称", "").split()[0] if " " in item.get("信源名称", "") else item.get("信源名称", ""),
-                    "类型": "Mock数据" if "MOCK" in item.get("id", "") else "真实爬虫",
-                    "配置JSON": json.dumps(item.get("采集规则", {}), ensure_ascii=False),
-                    "每次抓取上限": 5 if "MOCK" not in item.get("id", "") else 10,
-                    "是否启用": item.get("采集状态") == "活跃" or item.get("采集状态") == "Mock",
-                    "优先级": int(item.get("权重", 0.5) * 10),
-                    "创建时间": now_ts,
-                }
-                transformed.append(record)
+            record = dict(item)
 
-            elif table_name == "Agent花名册":
-                # 从 mock_data/agent_roster.json 转换
-                record = {
-                    "id": item.get("id", "").replace("AGENT-", "EMP-"),
-                    "花名": item.get("Agent名称", ""),
-                    "英文代号": item.get("Agent编码", ""),
-                    "部门": item.get("所属部门", ""),
-                    "职责描述": item.get("职责描述", ""),
-                    "输入": item.get("输入", ""),
-                    "输出": item.get("输出", ""),
-                    "调用模型": item.get("LLM模型", ""),
-                    "系统提示词": "",  # mock数据中没有
-                    "是否启用": item.get("状态") == "活跃",
-                    "创建时间": now_ts,
-                }
-                transformed.append(record)
-
-            elif table_name == "热帖库":
-                # 从 mock_data/trend_hotposts.json 转换
-                hot_metrics = item.get("热度指标", {})
-                engagement = 0
-                if "评论数" in hot_metrics:
-                    engagement += hot_metrics["评论数"]
-                if "点赞数" in hot_metrics:
-                    engagement += hot_metrics["点赞数"]
-                if "转发数" in hot_metrics:
-                    engagement += hot_metrics["转发数"]
-
-                # 解析发布时间
-                pub_time = item.get("发布时间", "")
-                try:
-                    pub_ts = to_feishu_datetime(pub_time) if pub_time else now_ts
-                except Exception:
-                    pub_ts = now_ts
-
-                # 解析采集时间
-                crawl_time = item.get("采集时间", "")
-                try:
-                    crawl_ts = to_feishu_datetime(crawl_time) if crawl_time else now_ts
-                except Exception:
-                    crawl_ts = now_ts
-
-                record = {
-                    "id": item.get("id", ""),
-                    "信源ID": item.get("信源 ID", ""),
-                    "信源平台": item.get("信源名称", ""),
-                    "标题": item.get("热帖标题", ""),
-                    "原文链接": {"text": "查看原文", "link": item.get("原始链接", "")} if item.get("原始链接") else None,
-                    "原文摘要": item.get("内容摘要", ""),
-                    "原文语言": "英文" if item.get("信源名称") in ["arXiv", "HackerNews", "GitHub", "Reddit r/LocalLLaMA", "Reddit r/MachineLearning", "X/Twitter"] else "中文",
-                    "主题标签": item.get("关键词", []),
-                    "阅览量": hot_metrics.get("阅读数", hot_metrics.get("播放量", 0)),
-                    "互动量": engagement,
-                    "发布时间": pub_ts,
-                    "抓取时间": crawl_ts,
-                    "热度评分": 0.7,  # 默认值
-                    "内容质量": "中",  # 默认值
-                    "状态": "待选" if item.get("处理状态") == "待分析" else "已选",
-                }
-                transformed.append(record)
-
-            elif table_name == "KOC人设":
-                # 使用 tables.py 中定义的种子数据，但需要转换日期时间
-                record = dict(item)
-                # 转换创建时间为时间戳
-                if "创建时间" in record:
+            # 转换日期时间字段
+            for time_field in ["创建时间", "更新时间", "发布时间", "抓取时间", "选定时间"]:
+                if time_field in record and isinstance(record[time_field], str):
                     try:
-                        record["创建时间"] = to_feishu_datetime(record["创建时间"])
+                        record[time_field] = to_feishu_datetime(record[time_field])
                     except Exception:
-                        record["创建时间"] = now_ts
-                transformed.append(record)
+                        record[time_field] = now_ts
 
-            else:
-                # 其他表直接使用原始数据
-                transformed.append(item)
+            # 确保布尔值正确（YAML解析可能返回字符串"true"）
+            for bool_field in ["是否启用", "是否默认"]:
+                if bool_field in record:
+                    val = record[bool_field]
+                    if isinstance(val, str):
+                        record[bool_field] = val.lower() in ("true", "yes", "1", "是")
+
+            transformed.append(record)
 
         except Exception as e:
             logger.warning(f"  转换记录失败: {e}")
@@ -216,11 +143,12 @@ async def setup_tables(base: FeishuBaseManager) -> Dict[str, str]:
 
     table_ids = {}
 
-    # 按顺序创建7张表
+    # 按顺序创建8张表（v3.0：新增内容资产库）
     table_order = [
         "信源配置",
         "热帖库",
         "选题库",
+        "内容资产库",  # v3.0 新增
         "数据库",
         "KOC人设",
         "Agent花名册",
@@ -262,15 +190,14 @@ async def seed_data(base: FeishuBaseManager, table_ids: Dict[str, str]):
     """
     logger.info("[3/4] 写入种子数据...")
 
-    # 定义种子数据源
+    # 定义种子数据源：全部从 tables.py 硬编码加载，统一维护
     seed_configs = [
-        ("信源配置", "src_sources.json", None),  # 从mock_data加载并转换
-        ("Agent花名册", "agent_roster.json", None),  # 从mock_data加载并转换
-        ("热帖库", "trend_hotposts.json", None),  # 可选，用于demo
-        ("KOC人设", None, "KOC人设"),  # 从tables.py内置数据加载
+        ("信源配置", "信源配置"),
+        ("Agent花名册", "Agent花名册"),
+        ("KOC人设", "KOC人设"),
     ]
 
-    for table_name, mock_file, table_key in seed_configs:
+    for table_name, table_key in seed_configs:
         if table_name not in table_ids:
             logger.warning(f"  表不存在，跳过: {table_name}")
             continue
@@ -284,15 +211,9 @@ async def seed_data(base: FeishuBaseManager, table_ids: Dict[str, str]):
                 logger.info(f"  [{table_name}] 已有 {len(existing_records)} 条记录，跳过")
                 continue
 
-            # 获取种子数据
-            if mock_file:
-                raw_data = load_mock_data(mock_file)
-                seed_data = transform_seed_data(table_name, raw_data)
-            elif table_key:
-                raw_data = get_seed_data(table_key)
-                seed_data = transform_seed_data(table_name, raw_data)
-            else:
-                continue
+            # 从 tables.py 获取种子数据并转换时间戳
+            raw_data = get_seed_data(table_key)
+            seed_data = transform_seed_data(table_name, raw_data)
 
             if not seed_data:
                 logger.info(f"  [{table_name}] 无种子数据")

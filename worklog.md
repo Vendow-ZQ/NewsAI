@@ -4,7 +4,139 @@
 
 ---
 
+## 项目总览与一键运行指南
+
+### 项目简介
+
+NewsAI 是一个运行在飞书多维表格上的 AI 虚拟新闻编辑部，由 9 个 AI Agent 组成，7x24 自动采集全球 AI 信息源，转译为中文爆款内容。
+
+### 技术栈
+
+| 组件 | 技术 | 说明 |
+|------|------|------|
+| 编排引擎 | LangGraph | 状态图驱动 9 Agent 协作 |
+| LLM | Doubao 2.0 (火山方舟) | 通过 OpenAI 协议调用 |
+| 存储 | 飞书 Bitable | 7 张多维表格，无外部文档 |
+| SDK | lark-oapi + langchain-openai | 飞书 + LLM 双端对接 |
+
+### 项目文件结构
+
+```
+NewsAI/
+├── bootstrap.py              # 一键初始化：建表 + 种子数据
+├── run.py                    # 主入口：完整流程 / 单Agent调试
+├── pyproject.toml            # 依赖：langgraph, lark-oapi, loguru 等
+├── .env.example              # 环境变量模板（复制为 .env 后填写）
+│
+├── core/                     # 核心业务层
+│   ├── agents/               # 9 个 Agent 实现
+│   │   ├── base.py           # BaseAgent 抽象基类（模板方法模式）
+│   │   ├── trend_scout.py    # 小哨 - 信息采集
+│   │   ├── topic_curator.py  # 小编 - 选题策划
+│   │   ├── content_writer.py # 小文 - 文字编辑
+│   │   ├── visual_designer.py# 小图 - 视觉设计
+│   │   ├── script_writer.py  # 小播 - 短视频编剧
+│   │   ├── reviewer.py       # 小审 - 审核员
+│   │   ├── editor.py         # 小改 - 修改专员
+│   │   ├── distributor.py    # 小发 - 分发策略
+│   │   └── analyst.py        # 小数 - 数据分析师
+│   ├── graph/                # LangGraph 编排
+│   │   ├── builder.py        # 图构建工厂（流程定义）
+│   │   ├── state.py          # 共享 State（支持并发合并）
+│   │   ├── nodes.py          # 9 个节点包装器
+│   │   └── edges.py          # 审改循环条件边
+│   ├── sources/              # 信息源采集（arXiv/HN/GitHub/Reddit/Mock）
+│   ├── llm/                  # LLM 客户端（ChatOpenAI + Mock）
+│   └── utils/                # 工具类（FeishuBaseManager/配置/日志）
+│
+├── feishu_adapter/           # 飞书适配层
+│   ├── feishu_storage.py     # Storage 接口实现
+│   └── base/
+│       ├── tables.py         # 7 张表 Schema + 种子数据
+│       └── id_mapping.py     # 业务ID ↔ record_id 映射
+│
+├── tests/                    # 冒烟测试
+├── mock_data/                # Mock 数据集
+└── docs/                     # 架构文档
+```
+
+### 核心流程图
+
+```
+小哨(采集) → 小编(策划) → [并行] 小文(写作) + 小图(配图) + 小播(脚本)
+                                              ↓
+                        小审(审查) ←→ 小改(修改)  [最多3轮审改循环]
+                                              ↓
+                        小发(分发) → 小数(分析) → END
+```
+
+### 一键跑起来（3步）
+
+**Step 0 - 环境准备**
+```bash
+# 安装依赖
+pip install -e .
+
+# 复制环境变量模板
+copy .env.example .env
+# 编辑 .env 填入：
+#   LARK_APP_ID, LARK_APP_SECRET     (飞书开放平台)
+#   LARK_BASE_APP_TOKEN              (飞书Base URL中的token)
+#   ARK_API_KEY                      (火山方舟)
+```
+
+**Step 1 - 初始化（只需一次）**
+```bash
+python bootstrap.py
+# → 检查环境 → 连接飞书 → 建7张表 → 插入种子数据 → 打印Base链接
+```
+
+**Step 2 - 运行**
+```bash
+python run.py --once              # 跑一轮完整流程
+python run.py --once --topic ID   # 指定选题运行
+python run.py --agent trend       # 单独调试小哨
+python run.py --agent topic       # 单独调试小编
+```
+
+### 7 张 Bitable 表
+
+| 表名 | 用途 | 种子数据 |
+|------|------|----------|
+| 信源配置 | 6+ 信息源的配置 | 8 条 |
+| 热帖库 | 采集到的原始内容 | 9 条 |
+| 选题库 | 小编筛选后的选题 | 运行时生成 |
+| 数据库 | 分发后的数据分析 | 运行时生成 |
+| KOC人设 | 虚拟KOC的人设设定 | 1 条 |
+| Agent花名册 | 9 个Agent的档案 | 9 条 |
+| Agent协作日志 | 执行轨迹记录 | 运行时生成 |
+
+---
+
 ## 日志条目
+
+### 2026-05-11 (项目复盘与启动梳理)
+
+| 时间 | 执行人 | 动作 | 内容 | 变动/结果 |
+|------|--------|------|------|-----------|
+| 20:00 | Claude | 项目全景扫描 | 读取全部190+文件，梳理项目结构 | 完整理解NewsAI架构：9 Agents + LangGraph + Feishu Bitable |
+| 20:10 | Claude | 运行链路梳理 | 确认一键启动方式 | `bootstrap.py` → `run.py --once` 为标准启动链路 |
+| 20:15 | Claude | 更新worklog | 补充项目总结合关键入口文档 | worklog.md新增启动指引汇总 |
+
+**项目核心信息汇总：**
+
+| 维度 | 详情 |
+|------|------|
+| 项目名称 | NewsAI - AI虚拟新闻编辑部 |
+| 技术栈 | LangGraph + Doubao 2.0 + Feishu Bitable |
+| Agent数量 | 9个（小哨/小编/小文/小图/小播/小审/小改/小发/小数）|
+| 核心流程 | 采集 → 策划 → [并行写作/配图/脚本] → 审查 → [审改循环max3轮] → 分发 → 分析 |
+| 存储架构 | Bitable-Only（7张表，无外部文档）|
+| 一键初始化 | `python bootstrap.py` |
+| 一键运行 | `python run.py --once` |
+| 单Agent调试 | `python run.py --agent trend` 等 |
+
+---
 
 ### 2026-05-07 (决赛日)
 
@@ -361,3 +493,197 @@ editor.py _read_upstream()
 
 **最后更新**: 2026-05-07 02:30 SGT  
 **更新者**: Claude（Agent Prompts v2.0更新完成）
+
+---
+
+### 2026-05-12 (文件夹结构整理)
+
+| 时间 | 执行人 | 动作 | 内容 | 变动/结果 |
+|------|--------|------|------|-----------|
+| 21:45 | Claude | 重构文件夹结构 | 整理散乱文件到标准目录 | 43个文件归位，根目录保持简洁 |
+
+**整理详情：**
+
+| 文件类型 | 原位置 | 新位置 | 文件数 |
+|----------|--------|--------|--------|
+| 文档文件 | 根目录 | docs/ | 5个 (AGENT_PROMPTS.md, Final_Prompts.md等) |
+| 测试脚本 | 根目录 | tests/ | 5个 (e2e_test_v2.py等) |
+| 测试报告 | 根目录 | reports/ | 16个 (e2e_report_*.json) |
+| 数据文件 | 根目录 | data/ | 1个 (.id_mapping.json) |
+| 归档脚本 | 根目录 | scripts/archive/ | 16个 (旧版run_*.py) |
+| 空文件 | 根目录 | 删除 | 2个 (EOF, PYEOF) |
+
+**保持根目录简洁，仅保留核心入口：**
+- `bootstrap.py` - 项目初始化
+- `run.py` - 主运行入口
+- `worklog.md` - 工作日志
+- `README.md` - 项目说明
+- `QUICKSTART.md` - 快速开始
+
+**新增目录结构：**
+```
+NewsAI/
+├── data/           # 数据文件（gitignored）
+├── logs/           # 日志文件（gitignored）
+├── reports/        # 测试报告（gitignored）
+├── scripts/archive/# 归档脚本
+└── tests/          # 测试文件
+```
+
+**更新：** .gitignore调整，移除worklog.md的忽略，添加data/、logs/、reports/目录忽略
+
+---
+
+**最后更新**: 2026-05-12 22:00 SGT  
+**更新者**: Claude（文件夹结构整理）
+
+---
+
+### 2026-05-12 22:15 (文档全面更新)
+
+| 时间 | 执行人 | 动作 | 内容 | 变动/结果 |
+|------|--------|------|------|-----------|
+| 22:10 | Claude | 全面重写 README.md | 更新为项目主入口文档 | 新增项目结构、核心流程、文档索引 |
+| 22:12 | Claude | 重命名核心文档 | 6份核心文档标准化命名 | 更清晰的管理 |
+| 22:13 | Claude | 归档旧文档 | 5份历史文档移至archive/ | 减少干扰 |
+| 22:15 | Claude | 新建 ARCHITECTURE.md | 系统架构文档 | 完整架构描述 |
+
+**文档重命名清单：**
+
+| 旧名称 | 新名称 | 说明 |
+|--------|--------|------|
+| Final_Prompts.md | AGENT_PROMPTS_MASTER.md | 完整Prompt工程文档 |
+| Agent_roster_v2.md | AGENT_ROSTER.md | 9位虚拟员工档案 |
+| Documents_design_v2.md | CONTENT_DESIGN.md | 内容产物设计 |
+| NewsAI_project_v2.md | PROJECT_OVERVIEW.md | 项目概述 |
+| Tables_schema_v2.md | DATABASE_SCHEMA.md | 表结构设计 |
+| KOC_persona.md | KOC_PERSONA.md | KOC人设 |
+
+**归档文档清单（移至docs/archive/）：**
+
+- AGENT_PROMPTS.md（早期简单版本）
+- ByteIntern_Submission.md（实习申请材料）
+- SOP_v2.md（开发过程记录）
+- NewsAI_workspace_v2.md（工作区设计）
+- Document_Implementation_Summary.md（实现摘要）
+
+**新建文档：**
+
+- ARCHITECTURE.md - 系统架构、数据流、设计模式详解
+
+**README.md 新增内容：**
+- 完整的项目结构图
+- 核心流程详解（6步流程）
+- 7张Bitable表说明
+- 文档索引表
+- 最近更新记录
+
+---
+
+**最后更新**: 2026-05-12 22:20 SGT  
+**更新者**: Claude（文档全面更新完成）
+
+---
+
+### 2026-05-13 03:45-03:55 (0513分支全流程测试)
+
+| 时间 | 执行人 | 动作 | 内容 | 变动/结果 |
+|------|--------|------|------|-----------|
+| 03:45 | Claude | 创建分支 | 从0512创建0513分支 | git checkout -b 0513 |
+| 03:46 | Claude | 环境清理 | 清理旧日志和数据文件 | rm -f data/.id_mapping.json logs/*.log |
+| 03:46 | Claude | Bootstrap | 运行bootstrap.py初始化 | ✅ 24秒完成，8张表创建，90条种子数据 |
+| 03:46 | Claude | 全流程测试 | 运行run.py --once | ⚠️ 4分47秒完成，日志32KB |
+| 03:52 | Claude | 结果验证 | 分析运行日志 | ⚠️ 发现编码问题，需进一步验证各节点状态 |
+| 03:55 | Claude | 提交分支 | push到远程0513分支 | 推送测试记录和脚本 |
+
+**测试环境：**
+- Python 3.13.5 (Anaconda)
+- Windows 10
+- 飞书Bitable（全新初始化）
+
+**测试结果：**
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| Bootstrap耗时 | 24秒 | ✅ 正常 |
+| 全流程耗时 | 4分47秒 | ✅ 正常 |
+| 日志大小 | 32KB | ✅ 流程运行 |
+| 编码问题 | 存在 | ⚠️ 需修复 |
+
+**发现的问题：**
+
+1. **编码问题（非阻塞）**
+   - 现象：Windows终端输出中文乱码（显示为���）
+   - 原因：Python输出编码与终端编码不匹配
+   - 建议：设置PYTHONIOENCODING=utf-8或使用chcp 65001
+
+2. **日志可读性差**
+   - 现象：32KB日志难以快速判断成功/失败
+   - 建议：添加流程完成报告，在关键节点输出状态
+
+3. **验证困难**
+   - 现象：无法快速验证各Agent执行结果
+   - 解决：创建scripts/verify_run_result.py（需修复编码后使用）
+
+**下一步行动：**
+1. 修复Windows编码问题
+2. 添加流程完成报告功能
+3. 重新运行测试验证各节点状态
+4. 修复发现的Bug
+
+**生成文件：**
+- logs/test_run_0513.log - 测试时间记录
+- logs/full_run_0513.log - 完整运行日志（32KB）
+- logs/test_report_0513.md - 测试报告
+- scripts/verify_run_result.py - 结果验证脚本（需完善）
+
+---
+
+### 2026-05-13 14:00-22:00 (v3.1 全流程修复与字段完善)
+
+| 时间 | 执行人 | 动作 | 内容 | 变动/结果 |
+|------|--------|------|------|-----------|
+| 14:00 | Claude | 诊断 | 分析 0513 分支全流程测试问题 | 定位 5 个核心问题 |
+| 14:30 | Claude | 修复 Bug 1 | production_sync 审改提前启动 | RuntimeError 被自身 try-except 捕获 → 移出检查逻辑，真正阻断 |
+| 15:00 | Claude | 修复 Bug 2 | 小图/小播文档读取失败 | `elements[0].text.content` → `elements[0].text_run.content`，属性名修正 |
+| 15:30 | Claude | 修复 Bug 3 | 文档批量写入 99992402 | batch_size 100 → 50（飞书 API 实际限制） |
+| 16:00 | Claude | 字段完善 | 热帖库补充 `原文链接` | trend_scout.py 添加原文链接写入 |
+| 16:30 | Claude | 字段完善 | 选题库新增 `原文摘要` | topic_curator.py 从关联热帖提取摘要写入 |
+| 17:00 | Claude | 字段完善 | Agent协作日志改进 | 任务类型明确枚举；`执行时间` → `开始时间`+`结束时间` |
+| 17:30 | Claude | 存储层增强 | 自动过滤不存在字段 | feishu_storage.py create/update 自动过滤，避免 FieldNameNotFound |
+| 18:00 | Claude | 小数重构 | 去除 mock json 读取 | analyst.py 从数据库表读真实数据，生成经验+分析文档 |
+| 18:30 | Claude | 新增脚本 | 创建 mock_data_demo.py | 独立演示脚本，用 LLM 生成模拟数据写入数据库 |
+| 19:00 | Claude | 端到端验证 | 运行 e2e_verify_v2.py | 12.1min 全部通过 ✅ |
+| 20:00 | Claude | 文档更新 | 更新 README.md | 拓扑图 v3.1、8张表、最近更新 |
+| 21:00 | Claude | Git 提交 | 提交到 0513 分支 | commit 94033a4，11 files, +965/-269 |
+
+**修复详情汇总：**
+
+| 问题 | 根因 | 修复文件 | 修复方式 |
+|------|------|----------|----------|
+| 审改提前启动 | RuntimeError 被自身 try-except 捕获 | `core/graph/nodes.py` | 检查逻辑移出 try-except |
+| 文档读取为空 | TextElement 无 `.text` 属性 | `feishu_adapter/docs/feishu_doc_storage.py` | 改为 `.text_run.content` |
+| 批量写入失败 | batch_size=100 超 API 限制 | `feishu_adapter/docs/feishu_doc_storage.py` | batch_size=50 |
+| 原文链接缺失 | _write_storage 未写该字段 | `core/agents/trend_scout.py` | 添加原文链接写入 |
+| 原文摘要缺失 | 选题库无该字段 | `feishu_adapter/base/tables.py` + `core/agents/topic_curator.py` | 新增字段+从热帖提取 |
+| 任务类型模糊 | 枚举值不够明确 | `core/agents/base.py` | 爬取热点/选题/写作/写Prompt/写脚本/审查/修改/分发/数据分析 |
+| 小数读 mock | 直接读 analytics_mock.json | `core/agents/analyst.py` | 从数据库表读真实数据 |
+
+**新增文件：**
+- `scripts/mock_data_demo.py` - 演示脚本（非 MultiAgent 系统）
+- `scripts/verification/e2e_verify.py` - v3.0 验证脚本
+- `scripts/verification/e2e_verify_v2.py` - v3.1 验证脚本（ainvoke 方式）
+
+**验证结果：**
+- 热帖库: 84 → 100 (delta 16) ✅
+- 选题库: 12 → 15 (delta 3) ✅
+- 内容资产库: 1 → 2 (delta 1) ✅
+- Agent协作日志: 27 → 36 (delta 9) ✅
+- 文案/配图/视频状态: 均"已完成" ✅
+- 审改状态: 3轮后强制通过 ✅
+- 分发状态: 已发布 ✅
+
+---
+
+**最后更新**: 2026-05-13 22:00 SGT  
+**更新者**: Claude（v3.1 全流程修复与字段完善）

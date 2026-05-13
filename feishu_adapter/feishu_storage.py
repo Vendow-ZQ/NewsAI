@@ -98,8 +98,11 @@ class FeishuStorage(Storage):
 
         # 生成或使用提供的业务ID
         if record_id is None:
-            prefix = self._get_prefix(table)
-            record_id = IDGenerator.generate(prefix)
+            # 优先从data中获取已有的id字段
+            record_id = data.get("id")
+            if not record_id:
+                prefix = self._get_prefix(table)
+                record_id = IDGenerator.generate(prefix)
 
         # 准备字段数据
         fields = dict(data)
@@ -115,6 +118,14 @@ class FeishuStorage(Storage):
 
         # 转换特殊字段格式（URL字段等）
         fields = self._prepare_fields_for_feishu(table_id, fields)
+
+        # 过滤掉表格中不存在的字段（避免 FieldNameNotFound 错误）
+        try:
+            existing_fields = self._get_field_types(table_id)
+            if existing_fields:
+                fields = {k: v for k, v in fields.items() if k in existing_fields or k == "id"}
+        except Exception:
+            pass
 
         try:
             # 创建记录
@@ -158,6 +169,14 @@ class FeishuStorage(Storage):
 
         # 转换特殊字段格式（URL字段等）
         fields = self._prepare_fields_for_feishu(table_id, fields)
+
+        # 过滤掉表格中不存在的字段（避免 FieldNameNotFound 错误）
+        try:
+            existing_fields = self._get_field_types(table_id)
+            if existing_fields:
+                fields = {k: v for k, v in fields.items() if k in existing_fields or k == "id"}
+        except Exception:
+            pass
 
         try:
             return self.base.update_record(table_id, feishu_record_id, fields)
@@ -386,6 +405,7 @@ class FeishuStorage(Storage):
         """准备字段数据，处理特殊字段类型（如URL字段）
 
         URL字段(type=15)需要 {"text": "...", "link": "..."} 格式
+        DATETIME字段(type=5)保持毫秒时间戳（飞书API要求整数格式）
         """
         field_types = self._get_field_types(table_id)
         if not field_types:
@@ -396,11 +416,7 @@ class FeishuStorage(Storage):
             field_type = field_types.get(field_name)
             # URL field (type=15) needs special format
             if field_type == 15 and isinstance(value, str):
-                # Convert plain string URL to Feishu URL format
-                result[field_name] = {
-                    "text": value,
-                    "link": value
-                }
+                result[field_name] = {"text": value, "link": value}
             else:
                 result[field_name] = value
 

@@ -49,24 +49,9 @@
   },
   {
     "id": "SRC-004",
-    "信源名称": "Reddit r/LocalLLaMA",
-    "信源类型": "开发者社区",
-    "信源URL": "https://www.reddit.com/r/LocalLLaMA/",
-    "采集状态": "活跃",
-    "更新频率": "每小时",
-    "权重": 0.75,
-    "标签体系": ["本地模型", "模型微调", "硬件部署", "开源"],
-    "最近采集": "2026-05-04T09:15:00",
-    "采集规则": {
-      "最低投票": 50,
-      "关键词": ["local", "fine-tune", "quantization", "OLLAMA"]
-    }
-  },
-  {
-    "id": "SRC-005",
-    "信源名称": "Reddit r/MachineLearning",
+    "信源名称": "Reddit",
     "信源类型": "学术社区",
-    "信源URL": "https://www.reddit.com/r/MachineLearning/",
+    "信源URL": "https://www.reddit.com/",
     "采集状态": "活跃",
     "更新频率": "每小时",
     "权重": 0.8,
@@ -78,7 +63,7 @@
     }
   },
   {
-    "id": "SRC-MOCK-001",
+    "id": "SRC-005",
     "信源名称": "小红书",
     "信源类型": "中文社媒",
     "信源URL": "https://www.xiaohongshu.com/",
@@ -93,7 +78,7 @@
     }
   },
   {
-    "id": "SRC-MOCK-002",
+    "id": "SRC-006",
     "信源名称": "抖音",
     "信源类型": "短视频平台",
     "信源URL": "https://www.douyin.com/",
@@ -108,7 +93,7 @@
     }
   },
   {
-    "id": "SRC-MOCK-003",
+    "id": "SRC-007",
     "信源名称": "X/Twitter",
     "信源类型": "国际社媒",
     "信源URL": "https://x.com/",

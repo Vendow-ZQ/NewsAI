@@ -1,899 +1,308 @@
-# -*- coding: utf-8 -*-
-"""Agent module."""
+"""小数 Analyst - 数据分析 Agent (EMP-009)。
 
-SYSTEM_PROMPT = """
-
-\
-
-<role>
-
-你是「小数 Analyst」，NewsAI 编辑部的数据分析师，独立复盘组。
-
-你直接对 KOC 负责。
-
-
-
-你的工作是：
-
-1. 单条选题数据回流：每条已发布选题的多平台数据汇总 + 综合评分
-
-2. 月度经验沉淀：累积 N 条数据后，输出"哪些选题真的爆了"的洞察文档
-
-</role>
-
-
-
-<workflow>
-
-按当前任务类型分支：
-
-
-
-【任务类型 1：单条数据回流】
-
-1. 读 mock 数据 / 真实平台数据
-
-2. 计算综合评分 + 爆点验证
-
-3. 写 DATA 表
-
-
-
-【任务类型 2：月度经验沉淀】
-
-1. 读最近 N 条 DATA + 对应 TOPIC
-
-2. 在 <thinking> 找规律
-
-3. 输出经验文档（结构化报告）
-
-</workflow>
-
+v3.1 改造：
+- 从 数据库 表读取真实数据（不再读 mock json）
+- 生成经验总结文档 + 数据分析文档
+- 沉淀到飞书云文档
 """
 
 import json
-
-import random
-
-from datetime import datetime, timedelta
-
+from datetime import datetime
 from typing import Any
 
-
-
-from core.agents.base import BaseAgent
-
+from core.agents.base import BaseAgent, current_timestamp_ms, parse_koc_data
+from core.prompts.shared.koc_persona import render_koc_block
 from core.storage.id_generator import IDGenerator
-
-from core.utils.feishu_base import FeishuBaseManager
-
-from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
-
-
-
+from core.utils.llm_output_parser import invoke_with_retry
 
 
 class AnalystAgent(BaseAgent):
+    """小数 EMP-009 · 数据分析师"""
 
-    """小数 Analyst - 数据分析师。
+    name = "小数"
+    english_name = "Analyst"
+    emoji = "📊"
 
+    SYSTEM_PROMPT = """\
+<role>
+你是「小数 Analyst」，NewsAI 编辑部的数据分析师，独立复盘组。
+你直接对 KOC 负责。
 
+【你当前在执行：数据复盘分析】
 
-    负责追踪内容表现，分析数据，沉淀经验。
+你的工作是：拿到一条选题的多平台真实数据，做深度分析：
+1. 数据表现与选题策划/内容质量之间的关联分析
+2. 各平台差异原因分析
+3. 可沉淀的经验总结
+4. 选题策略优化建议
+</role>
 
-    """
-
-
-
-    def __init__(self, storage: Any, llm_client: Any):
-
-        super().__init__("小数", storage, llm_client)
-
-
+<workflow>
+1. 读 <input>：选题信息 + 多平台真实数据 + 分发内容摘要
+2. 在 <thinking> 里分析数据与内容的关系
+3. 在 <answer> 输出分析结论
+</workflow>
+"""
 
     def _read_upstream(self, context: dict) -> dict:
-
-        """读取已发布选题。
-
-
-
-        如果指定了topic_id，直接读取该选题（用于全流程测试）。
-
-
-
-        从"选题库"表中读取状态为"已发布"且发布时间超过24小时的选题。
-
-        """
-
+        """读 KOC + 最新 DATA 记录 + 关联选题和资产"""
         try:
+            koc_record = self.storage.get_by_id("KOC人设", "KOC-001")
+            koc = parse_koc_data(koc_record.data) if koc_record else {}
 
-            from core.storage.interface import QueryFilter
+            # 取最新的 DATA 记录（由 mock_data_demo.py 或真实数据生成）
+            data_records = self.storage.query("数据库", limit=10)
+            if not data_records:
+                raise RuntimeError("数据库表中没有数据记录。请先运行 scripts/mock_data_demo.py 生成数据。")
 
-            topic_id = context.get("topic_id")
+            # 找数据状态为"待分析"或"已分析"的最新记录
+            data_record = None
+            for r in data_records:
+                if r.data.get("数据状态") in ["待分析", "已分析"]:
+                    data_record = r.data
+                    break
+            if not data_record:
+                data_record = data_records[0].data
 
+            topic_id = data_record.get("选题ID", "")
+            topic = None
             if topic_id:
-
-                # 全流程测试模式：直接读取指定选题
-
-                topic_record = self.storage.get_by_id("选题库", topic_id)
-
-                if topic_record and topic_record.data.get("状态") == "已发布":
-
-                    return {"topics": [topic_record.data]}
-
-                return {"topics": []}
-
-
-
-            # 手动过滤：读取所有已发布选题，然后过滤发布时间超过24小时的
-
-            all_topics = self.storage.query("选题库", limit=100)
-
-
-
-            # 计算24小时前的时间戳
-
-            yesterday_ts = int((datetime.now() - timedelta(hours=24)).timestamp() * 1000)
-
-
-
-            # 过滤已发布且发布时间超过24小时的选题
-
-            unanalyzed_topics = []
-
-            for topic in all_topics:
-
-                data = topic.data
-
-                if data.get("状态") == "已发布":
-
-                    # 检查是否已分析过
-
-                    data_id = data.get("数据回流ID", "")
-
-                    if not data_id:
-
-                        # 检查发布时间是否超过24小时
-
-                        publish_time = data.get("发布完成时间", 0)
-
-                        if publish_time and int(publish_time) < yesterday_ts:
-
-                            unanalyzed_topics.append(data)
-
-
-
-            return {"topics": unanalyzed_topics[:10]}  # 限制数量
-
-        except Exception as e:
-
-            print(f"[小数] 读取选题库失败: {e}")
-
-            return {"topics": []}
-
-
-
-    def _invoke_tools(self, context: dict, upstream_data: dict) -> dict:
-
-        """读取平台数据。
-
-
-
-        从mock或真实API读取平台数据。
-
-        """
-
-        topics = upstream_data.get("topics", [])
-
-        platform_data = []
-
-
-
-        for topic in topics:
-
-            topic_id = topic.get("id", "")
-
-            topic_title = topic.get("选题标题", "")
-
-
-
-            # 尝试从mock数据读取
-
-            mock_data = self._load_mock_analytics(topic_id)
-
-            if mock_data:
-
-                platform_data.append({
-
-                    "topic_id": topic_id,
-
-                    "topic_title": topic_title,
-
-                    "predicted_hook": topic.get("预估爆点", ""),
-
-                    "data": mock_data
-
-                })
-
-            else:
-
-                # 生成模拟数据
-
-                mock_data = self._generate_mock_data(topic_title)
-
-                platform_data.append({
-
-                    "topic_id": topic_id,
-
-                    "topic_title": topic_title,
-
-                    "predicted_hook": topic.get("预估爆点", ""),
-
-                    "data": mock_data
-
-                })
-
-
-
-        return {"platform_data": platform_data}
-
-
-
-    def _load_mock_analytics(self, topic_id: str) -> dict:
-
-        """从mock文件加载分析数据。"""
-
-        try:
-
-            import os
-
-            mock_file = os.path.join("mock_data", "analytics_mock.json")
-
-            with open(mock_file, "r", encoding="utf-8") as f:
-
-                data = json.load(f)
-
-                for item in data:
-
-                    if item.get("选题 ID") == topic_id:
-
-                        return item
-
-            return None
-
-        except Exception as e:
-
-            print(f"[小数] 加载mock数据失败: {e}")
-
-            return None
-
-
-
-    def _generate_mock_data(self, topic_title: str) -> dict:
-
-        """生成模拟数据。"""
-
-        # 根据标题长度和关键词简单模拟不同表现
-
-        base_score = random.uniform(0.3, 0.9)
-
-
-
-        return {
-
-            "选题标题": topic_title,
-
-            "公众号_阅读量": int(random.uniform(1000, 100000)),
-
-            "公众号_点赞数": int(random.uniform(50, 5000)),
-
-            "公众号_在看数": int(random.uniform(20, 2000)),
-
-            "小红书_阅读量": int(random.uniform(2000, 150000)),
-
-            "小红书_点赞数": int(random.uniform(100, 8000)),
-
-            "小红书_收藏数": int(random.uniform(50, 5000)),
-
-            "小红书_评论数": int(random.uniform(10, 500)),
-
-            "抖音_播放量": int(random.uniform(5000, 2000000)),
-
-            "抖音_点赞数": int(random.uniform(200, 100000)),
-
-            "抖音_评论数": int(random.uniform(50, 3000)),
-
-            "B站_播放量": int(random.uniform(3000, 800000)),
-
-            "B站_点赞数": int(random.uniform(150, 50000)),
-
-            "B站_投币数": int(random.uniform(30, 10000)),
-
-            "综合评分": round(base_score, 2),
-
-            "爆点验证": random.choice(["验证成功", "部分验证", "未爆"])
-
-        }
-
-
-
-    def _invoke_llm(self, context: dict, upstream_data: dict, tool_results: dict) -> dict:
-
-        """LLM分析数据。
-
-
-
-        对每条选题的平台数据，使用LLM分析表现并生成建议。
-
-        """
-
-        platform_data = tool_results.get("platform_data", [])
-
-        analyses = []
-
-
-
-        for item in platform_data:
-
-            prompt = self._build_analysis_prompt(item)
-
-            try:
-
-                response = self.llm.invoke(prompt)
-
-                analysis = self._parse_llm_response(response)
-
-                analyses.append({
-
-                    "topic_id": item["topic_id"],
-
-                    "topic_title": item["topic_title"],
-
-                    "analysis": analysis,
-
-                    "raw_data": item["data"]
-
-                })
-
-            except Exception as e:
-
-                print(f"[小数] LLM分析失败: {e}")
-
-                analyses.append({
-
-                    "topic_id": item["topic_id"],
-
-                    "topic_title": item["topic_title"],
-
-                    "analysis": self._fallback_analysis(item),
-
-                    "raw_data": item["data"]
-
-                })
-
-
-
-        # 检查是否需要生成月度总结
-
-        monthly_summary = None
-
-        if context.get("generate_monthly_summary", False):
-
-            monthly_summary = self._generate_monthly_summary(analyses)
-
-
-
-        return {
-
-            "analyses": analyses,
-
-            "monthly_summary": monthly_summary,
-
-            "count": len(analyses)
-
-        }
-
-
-
-    def _build_analysis_prompt(self, item: dict) -> str:
-
-        """构建数据分析提示词。"""
-
-        data = item["data"]
-
-        return f"""你是【小数 Analyst】，分析内容发布数据。
-
-
-
-选题信息：
-
-标题：{item["topic_title"]}
-
-预估爆点：{item.get("predicted_hook", "待分析")}
-
-实际爆点：待分析
-
-
-
-平台数据：
-
-公众号：阅读量{data.get("公众号_阅读量", 0)}, 点赞{data.get("公众号_点赞数", 0)}, 在看{data.get("公众号_在看数", 0)}
-
-小红书：阅读量{data.get("小红书_阅读量", 0)}, 点赞{data.get("小红书_点赞数", 0)}, 收藏{data.get("小红书_收藏数", 0)}, 评论{data.get("小红书_评论数", 0)}
-
-抖音：播放量{data.get("抖音_播放量", 0)}, 点赞{data.get("抖音_点赞数", 0)}, 评论{data.get("抖音_评论数", 0)}
-
-B站：播放量{data.get("B站_播放量", 0)}, 点赞{data.get("B站_点赞数", 0)}, 投币{data.get("B站_投币数", 0)}
-
-
-
-请分析：
-
-1. 综合评分（0-1）
-
-2. 爆点验证（验证成功/部分验证/未爆）
-
-3. 各平台表现分析
-
-4. 成功/失败原因
-
-5. 给小编的下个选题建议
-
-
-
-返回JSON：
-
-{{
-
-  "综合评分": 0.85,
-
-  "爆点验证": "验证成功",
-
-  "平台表现": {{
-
-    "最佳平台": "抖音",
-
-    "最差平台": "公众号",
-
-    "分析": "为什么..."
-
-  }},
-
-  "成败分析": "...",
-
-  "选题建议": ["建议1", "建议2"]
-
-}}
-
-"""
-
-
-
-    def _parse_llm_response(self, response: Any) -> dict:
-
-        """解析LLM响应。"""
-
-        try:
-
-            if isinstance(response, str):
-
-                content = response
-
-            elif hasattr(response, 'content'):
-
-                content = response.content
-
-            else:
-
-                content = str(response)
-
-
-
-            # 尝试从markdown代码块中提取JSON
-
-            if '```json' in content:
-
-                content = content.split('```json')[1].split('```')[0]
-
-            elif '```' in content:
-
-                content = content.split('```')[1].split('```')[0]
-
-
-
-            return json.loads(content.strip())
-
-        except Exception as e:
-
-            print(f"[小数] 解析LLM响应失败: {e}")
-
-            return {}
-
-
-
-    def _fallback_analysis(self, item: dict) -> dict:
-
-        """备用分析结果。"""
-
-        data = item["data"]
-
-        score = data.get("综合评分", 0.5)
-
-
-
-        if score >= 0.8:
-
-            validation = "验证成功"
-
-        elif score >= 0.5:
-
-            validation = "部分验证"
-
-        else:
-
-            validation = "未爆"
-
-
-
-        return {
-
-            "综合评分": score,
-
-            "爆点验证": validation,
-
-            "平台表现": {
-
-                "最佳平台": "待分析",
-
-                "最差平台": "待分析",
-
-                "分析": "数据待进一步分析"
-
-            },
-
-            "成败分析": "基于数据的自动分析",
-
-            "选题建议": ["建议关注热门话题", "建议优化标题吸引力"]
-
-        }
-
-
-
-    def _generate_monthly_summary(self, analyses: list) -> dict:
-
-        """生成月度经验总结。"""
-
-        if not analyses:
-
-            return None
-
-
-
-        # 统计数据
-
-        total = len(analyses)
-
-        success_count = sum(1 for a in analyses if a["analysis"].get("爆点验证") == "验证成功")
-
-        partial_count = sum(1 for a in analyses if a["analysis"].get("爆点验证") == "部分验证")
-
-        fail_count = total - success_count - partial_count
-
-
-
-        success_rate = round(success_count / total * 100, 1) if total > 0 else 0
-
-        avg_score = sum(a["analysis"].get("综合评分", 0) for a in analyses) / total if total > 0 else 0
-
-
-
-        prompt = f"""分析过去30天所有发布内容，生成经验文档。
-
-
-
-数据汇总：
-
-- 总发布数：{total}
-
-- 爆点验证率：{success_rate}%
-
-- 平均综合评分：{avg_score:.2f}
-
-- 验证成功：{success_count}条
-
-- 部分验证：{partial_count}条
-
-- 未爆：{fail_count}条
-
-
-
-请生成月度复盘报告（Markdown格式）：
-
-- TL;DR关键发现
-
-- 数据汇总表格
-
-- 深度洞察（3-5条）
-
-- 给小编的下月选题建议（5-10条）
-
-
-
-返回JSON格式：
-
-{{
-
-  "tldr": "关键发现摘要",
-
-  "data_table": "表格内容",
-
-  "insights": ["洞察1", "洞察2", ...],
-
-  "suggestions": ["建议1", "建议2", ...]
-
-}}
-
-"""
-
-
-
-        try:
-
-            response = self.llm.invoke(prompt)
-
-            return self._parse_llm_response(response)
-
-        except Exception as e:
-
-            print(f"[小数] 生成月度总结失败: {e}")
+                topic_rec = self.storage.get_by_id("选题库", topic_id)
+                if topic_rec:
+                    topic = topic_rec.data
+
+            # 读关联资产（获取分发文档内容用于分析）
+            asset = None
+            if topic:
+                asset_id = topic.get("关联资产ID", "")
+                if asset_id:
+                    asset_rec = self.storage.get_by_id("内容资产库", asset_id)
+                    if asset_rec:
+                        asset = asset_rec.data
 
             return {
-
-                "tldr": f"本月发布{total}条内容，验证成功率{success_rate}%",
-
-                "data_table": f"总发布数: {total}, 成功率: {success_rate}%",
-
-                "insights": ["基于数据的自动分析"],
-
-                "suggestions": ["建议持续优化选题策略"]
-
+                "koc": koc,
+                "data": data_record,
+                "topic": topic,
+                "asset": asset,
             }
+        except Exception as e:
+            print(f"[小数] 读取上游数据失败: {e}")
+            raise
 
+    def _invoke_tools(self, context: dict, upstream_data: dict) -> dict:
+        """读取分发文档内容摘要（用于分析数据与内容的关系）"""
+        asset = upstream_data.get("asset", {})
+        doc_snippets = {}
 
+        # 尝试读取各分发文档的前500字作为摘要
+        for field in ["公众号分发文档链接", "小红书分发文档链接", "抖音分发文档链接", "B站分发文档链接"]:
+            url = asset.get(field)
+            if url:
+                try:
+                    from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
+                    doc_storage = FeishuDocStorage()
+                    url_str = url.get("link", "") if isinstance(url, dict) else str(url)
+                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ""
+                    if doc_id:
+                        content = doc_storage.read_doc_content(doc_id) or ""
+                        doc_snippets[field.replace("分发文档链接", "")] = content[:500]
+                except Exception:
+                    pass
+
+        return {"doc_snippets": doc_snippets}
+
+    def _invoke_llm(self, context: dict, upstream_data: dict, tool_results: dict) -> dict:
+        """LLM 深度分析"""
+        koc = upstream_data["koc"]
+        data = upstream_data["data"]
+        topic = upstream_data.get("topic", {})
+        doc_snippets = tool_results.get("doc_snippets", {})
+
+        koc_block = render_koc_block(koc, mode="analytics")
+        user_content = self._build_user_prompt(koc_block, topic, data, doc_snippets)
+
+        messages = [
+            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
+        thinking, answer, raw = invoke_with_retry(self.llm, messages, max_retries=3)
+
+        if isinstance(answer, str):
+            try:
+                answer = json.loads(answer)
+            except:
+                answer = {"综合评分": 0.5, "爆点验证": "未爆", "平台表现": {}, "成败分析": "", "选题建议": []}
+
+        return {
+            "analysis": answer,
+            "topic_id": topic.get("id", ""),
+            "topic_title": topic.get("选题标题", ""),
+            "data": data,
+        }
+
+    def _build_user_prompt(self, koc_block: str, topic: dict, data: dict, doc_snippets: dict) -> str:
+        """构建用户 prompt"""
+        docs_text = ""
+        for platform, snippet in doc_snippets.items():
+            docs_text += f"\n【{platform}分发内容摘要】\n{snippet}\n"
+
+        return f"""\
+{koc_block}
+
+<input>
+选题 ID：{topic.get('id', '')}
+选题标题：{topic.get('选题标题', '')}
+选题角度：{topic.get('选题角度', '')}
+预估爆点：{topic.get('预估爆点', '')}
+钩子类型：{topic.get('钩子类型', '')}
+
+【多平台真实数据】
+公众号：阅读={data.get('公众号_阅读量', 0)}，点赞={data.get('公众号_点赞数', 0)}，在看={data.get('公众号_在看数', 0)}
+小红书：阅读={data.get('小红书_阅读量', 0)}，点赞={data.get('小红书_点赞数', 0)}，收藏={data.get('小红书_收藏数', 0)}，评论={data.get('小红书_评论数', 0)}
+抖音：播放={data.get('抖音_播放量', 0)}，点赞={data.get('抖音_点赞数', 0)}，评论={data.get('抖音_评论数', 0)}
+视频号：播放={data.get('视频号_播放量', 0)}，点赞={data.get('视频号_点赞数', 0)}，转发={data.get('视频号_转发数', 0)}
+B站：播放={data.get('B站_播放量', 0)}，点赞={data.get('B站_点赞数', 0)}，投币={data.get('B站_投币数', 0)}
+
+综合评分：{data.get('综合评分', 0.5)}
+爆点验证：{data.get('爆点验证', '未爆')}
+{docs_text}
+</input>
+
+<rules>
+【分析要求】
+1. 数据与选题的关联：哪些数据表现印证了选题策划时的判断？哪些偏离了预期？
+2. 平台差异分析：为什么某些平台表现好/差？与内容形式、受众画像的关系是什么？
+3. 内容质量归因：数据表现与文案、配图、视频脚本质量之间的关联
+4. 可沉淀经验：总结出 3-5 条可复用的经验
+5. 选题策略优化：基于数据反馈，提出下一期选题的优化建议
+
+【输出 JSON 结构】
+{{
+  "综合评分": {data.get('综合评分', 0.5)},
+  "爆点验证": "{data.get('爆点验证', '未爆')}",
+  "平台表现": {{
+    "最佳平台": "...",
+    "最差平台": "...",
+    "分析": "..."
+  }},
+  "数据与内容关联分析": "300-500字",
+  "可沉淀经验": ["经验1", "经验2", "经验3", "经验4", "经验5"],
+  "选题策略优化建议": ["建议1", "建议2", "建议3"],
+  "经验总结文档标题": "...
+}}
+</rules>
+
+<self_check>
+□ 分析有深度，不是简单复述数据
+□ 经验总结具体可复用，不是空话
+□ 建议有针对性，与数据表现直接关联
+</self_check>
+
+现在开始处理。
+"""
 
     def _write_storage(self, context: dict, result: dict):
+        """生成经验文档 + 数据分析文档，更新 DATA 表"""
+        analysis = result.get("analysis", {})
+        topic_id = result.get("topic_id", "")
+        topic_title = result.get("topic_title", "")
+        data_record = result.get("data", {})
+        data_id = data_record.get("id", "")
 
-        """写入DATA表并创建经验总结云文档。
+        date_str = datetime.now().strftime("%Y%m%d")
 
+        # 1. 生成经验总结文档
+        exp_doc_url = ""
+        try:
+            from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
+            doc_storage = FeishuDocStorage()
+            exp_markdown = self._format_experience_doc(topic_title, analysis)
+            exp_doc_id = doc_storage.create_doc(f"[经验] {date_str} {topic_title}")
+            doc_storage.append_section(exp_doc_id, exp_markdown)
+            doc_storage.set_permissions(exp_doc_id, share_type="tenant_readable")
+            exp_doc_url = doc_storage.get_share_url(exp_doc_id)
+            print(f"[小数] 创建经验文档: {topic_title[:30]}...")
+        except Exception as e:
+            print(f"[小数] 创建经验文档失败: {e}")
 
+        # 2. 生成数据分析文档
+        analysis_doc_url = ""
+        try:
+            from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
+            doc_storage = FeishuDocStorage()
+            ana_markdown = self._format_analysis_doc(topic_title, data_record, analysis)
+            ana_doc_id = doc_storage.create_doc(f"[数据分析] {date_str} {topic_title}")
+            doc_storage.append_section(ana_doc_id, ana_markdown)
+            doc_storage.set_permissions(ana_doc_id, share_type="tenant_readable")
+            analysis_doc_url = doc_storage.get_share_url(ana_doc_id)
+            print(f"[小数] 创建数据分析文档: {topic_title[:30]}...")
+        except Exception as e:
+            print(f"[小数] 创建数据分析文档失败: {e}")
 
-        将分析结果写入"数据库"表，创建/追加经验总结到飞书云文档。
-
-        """
-
-        analyses = result.get("analyses", [])
-
-        doc_storage = FeishuDocStorage()
-
-        period = datetime.now().strftime("%Y%m")
-
-        period_cn = datetime.now().strftime("%Y年%m月")
-
-
-
-        for analysis in analyses:
-
-            raw_data = analysis["raw_data"]
-
-            llm_analysis = analysis["analysis"]
-
-
-
-            business_id = IDGenerator.generate("DATA")
-
-            topic_title = analysis["topic_title"]
-
-            experience_content = llm_analysis.get("成败分析", "")
-
-            suggestions = llm_analysis.get("选题建议", [])
-
-
-
-            # 构建经验总结文档（Markdown格式）
-
-            experience_doc = self._format_experience_document(
-
-                period_cn, topic_title, experience_content, suggestions, raw_data
-
-            )
-
-
-
+        # 3. 更新 DATA 表
+        if data_id:
             try:
-
-                record_data = {
-
-                    "id": business_id,
-
-                    "选题ID": analysis["topic_id"],
-
-                    "选题标题": topic_title,
-
-                    "公众号_阅读量": raw_data.get("公众号_阅读量", 0),
-
-                    "公众号_点赞数": raw_data.get("公众号_点赞数", 0),
-
-                    "公众号_在看数": raw_data.get("公众号_在看数", 0),
-
-                    "小红书_阅读量": raw_data.get("小红书_阅读量", 0),
-
-                    "小红书_点赞数": raw_data.get("小红书_点赞数", 0),
-
-                    "小红书_收藏数": raw_data.get("小红书_收藏数", 0),
-
-                    "小红书_评论数": raw_data.get("小红书_评论数", 0),
-
-                    "抖音_播放量": raw_data.get("抖音_播放量", 0),
-
-                    "抖音_点赞数": raw_data.get("抖音_点赞数", 0),
-
-                    "抖音_评论数": raw_data.get("抖音_评论数", 0),
-
-                    "B站_播放量": raw_data.get("B站_播放量", 0),
-
-                    "B站_点赞数": raw_data.get("B站_点赞数", 0),
-
-                    "B站_投币数": raw_data.get("B站_投币数", 0),
-
-                    "综合评分": llm_analysis.get("综合评分", 0.5),
-
-                    "爆点验证": llm_analysis.get("爆点验证", "未爆"),
-
-                    "数据采集时间": FeishuBaseManager.convert_datetime_to_timestamp(datetime.now()),
-
-                    "数据状态": "已迭代分析",
-
-                }
-
-
-
-                self.storage.create("数据库", record_data)
-
-
-
-                # 创建/追加经验总结云文档
-
-                existing = self.storage.get_by_id("数据库", business_id)
-
-                existing_url = existing.data.get("经验文档链接", "") if existing else ""
-
-
-
-                if existing_url:
-
-                    # Handle URL field format - could be dict or string
-
-                    url_str = existing_url.get('link', '') if isinstance(existing_url, dict) else existing_url
-
-                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
-
-                else:
-
-                    doc_id = doc_storage.create_experience_doc(period, topic_title)
-
-
-
-                doc_storage.append_section(doc_id, experience_doc)
-
-
-
-                # 设置权限（组织内可查看）
-
-                doc_storage.set_permissions(doc_id, share_type="tenant_readable")
-
-                doc_url = doc_storage.get_share_url(doc_id)
-
-
-
-                print(f"[小数] 创建数据分析: {topic_title[:30]}...")
-
-                print(f"[小数] 经验总结文档: {doc_url}")
-
-
-
-                # 更新数据库的经验文档链接
-
-                self.storage.update("数据库", business_id, {"经验文档链接": doc_url})
-
-
-
-                # 更新选题库的数据回流ID
-
-                self.storage.update(
-
-                    "选题库",
-
-                    record_id=analysis["topic_id"],
-
-                    data={"数据回流ID": business_id}
-
-                )
-
+                self.storage.update("数据库", data_id, {
+                    "经验文档链接": exp_doc_url,
+                    "数据分析文档链接": analysis_doc_url,
+                    "数据状态": "已分析",
+                })
+                print(f"[小数] DATA {data_id} 更新文档链接")
             except Exception as e:
+                print(f"[小数] 更新 DATA 失败: {e}")
 
-                print(f"[小数] 写入数据库失败: {e}")
+        result["exp_doc_url"] = exp_doc_url
+        result["analysis_doc_url"] = analysis_doc_url
 
+    def _format_experience_doc(self, topic_title: str, analysis: dict) -> str:
+        """格式化经验总结文档"""
+        experiences = analysis.get("可沉淀经验", [])
+        suggestions = analysis.get("选题策略优化建议", [])
 
+        md = f"# [经验] {topic_title}\n\n"
+        md += f"*生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}*\n\n"
+        md += "---\n\n"
 
-    def _format_experience_document(self, period: str, topic_title: str,
+        md += "## 可沉淀经验\n\n"
+        for i, exp in enumerate(experiences, 1):
+            md += f"{i}. {exp}\n\n"
 
-                                     analysis: str, suggestions: list, raw_data: dict) -> str:
+        md += "## 选题策略优化建议\n\n"
+        for i, sug in enumerate(suggestions, 1):
+            md += f"{i}. {sug}\n\n"
 
-        """格式化经验总结为Markdown文档。"""
+        md += "## 平台表现总结\n\n"
+        platform = analysis.get("平台表现", {})
+        md += f"- 最佳平台: {platform.get('最佳平台', 'N/A')}\n"
+        md += f"- 最差平台: {platform.get('最差平台', 'N/A')}\n"
+        md += f"- 分析: {platform.get('分析', 'N/A')}\n\n"
 
-        doc = f"""# {period} AI内容复盘
+        return md
 
+    def _format_analysis_doc(self, topic_title: str, data: dict, analysis: dict) -> str:
+        """格式化数据分析文档"""
+        md = f"# [数据分析] {topic_title}\n\n"
+        md += f"*生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}*\n\n"
+        md += "---\n\n"
 
+        md += "## 综合评分\n\n"
+        md += f"- 综合评分: {data.get('综合评分', 'N/A')}\n"
+        md += f"- 爆点验证: {data.get('爆点验证', 'N/A')}\n\n"
 
-## 选题：{topic_title}
+        md += "## 各平台数据\n\n"
+        md += f"| 平台 | 阅读量/播放量 | 点赞 | 其他 |\n"
+        md += f"|------|--------------|------|------|\n"
+        md += f"| 公众号 | {data.get('公众号_阅读量', 0)} | {data.get('公众号_点赞数', 0)} | 在看 {data.get('公众号_在看数', 0)} |\n"
+        md += f"| 小红书 | {data.get('小红书_阅读量', 0)} | {data.get('小红书_点赞数', 0)} | 收藏 {data.get('小红书_收藏数', 0)} 评论 {data.get('小红书_评论数', 0)} |\n"
+        md += f"| 抖音 | {data.get('抖音_播放量', 0)} | {data.get('抖音_点赞数', 0)} | 评论 {data.get('抖音_评论数', 0)} |\n"
+        md += f"| 视频号 | {data.get('视频号_播放量', 0)} | {data.get('视频号_点赞数', 0)} | 转发 {data.get('视频号_转发数', 0)} |\n"
+        md += f"| B站 | {data.get('B站_播放量', 0)} | {data.get('B站_点赞数', 0)} | 投币 {data.get('B站_投币数', 0)} |\n\n"
 
+        md += "## 数据与内容关联分析\n\n"
+        md += analysis.get("数据与内容关联分析", "（无分析内容）") + "\n\n"
 
+        return md
 
-### 成败分析
-
-{analysis}
-
-
-
-### 选题建议
-
-"""
-
-        for suggestion in suggestions:
-
-            doc += f"- {suggestion}\n"
-
-
-
-        doc += f"""
-
-### 平台数据
-
-- 公众号：阅读量{raw_data.get('公众号_阅读量', 0)}, 点赞{raw_data.get('公众号_点赞数', 0)}
-
-- 小红书：阅读量{raw_data.get('小红书_阅读量', 0)}, 点赞{raw_data.get('小红书_点赞数', 0)}
-
-- 抖音：播放量{raw_data.get('抖音_播放量', 0)}, 点赞{raw_data.get('抖音_点赞数', 0)}
-
-- B站：播放量{raw_data.get('B站_播放量', 0)}, 点赞{raw_data.get('B站_点赞数', 0)}
-
-
-
----
-
-生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}
-
-"""
-
-        return doc
-
-
-
-    def _log_work(self, context: dict, result: dict):
-
-        """记录工作日志。"""
-
-        count = result.get("count", 0)
-
-        print(f"[小数] 完成：分析 {count} 条选题数据")
-
-        super()._log_work(context, result)
-
-
-
-
-
-# 保持向后兼容的别名
 
 Analyst = AnalystAgent
-

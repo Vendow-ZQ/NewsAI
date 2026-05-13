@@ -1,577 +1,393 @@
-# -*- coding: utf-8 -*-
-"""Agent module."""
+"""小播 ScriptWriter - 短视频编剧 Agent (EMP-005)。
 
-SYSTEM_PROMPT = """
-
-\
-
-<role>
-
-你是「小播 ScriptWriter」，NewsAI 编辑部的短视频编剧，生产组成员。
-
-你的工作是：根据选题 + 小文写的口播文案（抖音版），
-
-扩展成抖音 + B站竖屏的完整视频脚本（含画面/口播/字幕/镜头清单）。
-
-</role>
-
-
-
-<workflow>
-
-1. 读 <input>：选题 + 小文的抖音口播稿
-
-2. 在 <thinking> 里规划：
-
-   - 抖音 30-60 秒：钩子（3秒）+ 核心（30-50秒）+ CTA（5秒）的具体节奏
-
-   - B站 1-3 分钟：开场（15秒）+ 主体分段 + 结尾
-
-3. 在 <answer> 输出完整脚本
-
-</workflow>
-
-
-
-<output_format>
-
-先在 <thinking>...</thinking>，然后 <answer>{...}</answer>。
-
-</output_format>
-
+v3.0 改造：
+- 读小文长文全文（v3 修复 Bug 7：不限字数）
+- 出 1 个 1-3 分钟主脚本（不再分 4 平台）
 """
 
 import json
-
 from datetime import datetime
-
 from typing import Any
 
-
-
-from core.agents.base import BaseAgent
-
-from core.storage.interface import QueryFilter
-
-from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
-
-
-
+from core.agents.base import BaseAgent, current_timestamp_ms, parse_koc_data
+from core.prompts.shared.koc_persona import render_koc_block
+from core.storage.id_generator import IDGenerator
+from core.utils.llm_output_parser import invoke_with_retry
 
 
 class ScriptWriterAgent(BaseAgent):
+    """小播 EMP-005 · 短视频编剧"""
 
-    """小播 ScriptWriter - 短视频编剧。
+    name = "小播"
+    english_name = "ScriptWriter"
+    emoji = "🎬"
 
+    SYSTEM_PROMPT = """\
+<role>
+你是「小播 ScriptWriter」，NewsAI 编辑部的短视频编剧。
 
+【你的核心工作是翻译，不是另起炉灶】
+你读小文写完的长文，把它"翻译"成一份 1-3 分钟的视频脚本。
 
-    负责生成抖音和B站视频脚本。
+"翻译"的意思：
+- 保持小文的选题角度（怎么切入的）
+- 保持核心信息点（讲了什么 takeaway）
+- 保持钩子调性（用的什么类型钩子）
+- 但要重新组织为视频化的镜头/口播/字幕结构
 
-    """
+你只出 1 个主脚本——小发分发时会标注"抖音版剪辑指引"（保留哪些镜头）。
+</role>
 
+<workflow>
+1. 读 <input>：选题 + 小文长文（全文）
+2. 在 <thinking> 里：
+   - 长文哪些点必须保留？哪些可以删？
+   - 长文的钩子怎么前置到 0-3 秒？
+   - 长文的 H2 章节如何对应视频的分段？
+3. 在 <answer> 输出完整脚本
+</workflow>
 
+<output_format>
+先 <thinking>...</thinking>（≤200字），然后 <answer>{JSON}</answer>。
 
-    def __init__(self, storage: Any, llm_client: Any):
+【脚本 JSON 结构】
+{
+  "总时长": "1-3分钟",
+  "钩子类型": "反差/数字/提问/身份代入",
+  "钩子开头": {"时间": "00:00-00:05", "画面": "", "口播": "", "字幕": ""},
+  "核心内容": [{"段落": "", "时间": "", "画面": "", "口播": "", "字幕": ""}],
+  "CTA": {"时间": "", "画面": "", "口播": "", "字幕": ""},
+  "镜头清单": [
+    {"时间码": "00:00:00~00:00:15", "画面": "", "口播": "", "字幕": ""}
+  ],
+  "BGM建议": "",
+  "剪辑节奏说明": ""
+}
 
-        super().__init__("小播", storage, llm_client)
-
-
+镜头清单时间码格式统一用 00:00:00~00:00:15 这种格式，简洁明了
+</output_format>
+"""
 
     def _read_upstream(self, context: dict) -> dict:
-
-        """读取选题库中状态="已选"的选题。
-
-
-
-        从"选题库"表中读取状态为"生产中"的选题，
-
-        同时读取KOC人设信息。
-
-        """
-
-        topic_id = context.get("topic_id")
-
-        koc_id = context.get("koc_id", "KOC-001")
-
-
-
+        """读 KOC + TOPIC + ASSET + 小文长文全文"""
         try:
+            koc_record = self.storage.get_by_id("KOC人设", "KOC-001")
+            koc = parse_koc_data(koc_record.data) if koc_record else {}
 
-            # 读取KOC人设
-
-            koc_record = self.storage.get_by_id("KOC人设", koc_id)
-
-            koc = koc_record.data if koc_record else {}
-
-
-
-            # 读取选题
+            # 优先使用 context 传入的 topic_id 和 asset_id
+            topic_id = context.get("topic_id", "")
+            asset_id = context.get("asset_id", "")
+            topic = None
+            asset = None
 
             if topic_id:
-
                 topic_record = self.storage.get_by_id("选题库", topic_id)
+                topic = topic_record.data if topic_record else None
 
-                topics = [topic_record.data] if topic_record else []
+            if asset_id:
+                asset_record = self.storage.get_by_id("内容资产库", asset_id)
+                asset = asset_record.data if asset_record else None
 
-            else:
+            # 如果没有context，查询["已选中", "生产中"]状态的选题
+            if not topic:
+                topics = self.storage.query("选题库", limit=10)
+                active_topics = [t.data for t in topics if t.data.get("选题状态") in ["已选中", "生产中"]]
+                if active_topics:
+                    topic = active_topics[0]
+                    # 从topic获取asset_id
+                    if not asset_id:
+                        asset_id = topic.get("关联资产ID", "")
+                        if asset_id:
+                            asset_record = self.storage.get_by_id("内容资产库", asset_id)
+                            asset = asset_record.data if asset_record else {}
 
-                # 查询所有"生产中"或"审改中"状态的选题（手动过滤避免QueryFilter问题）
+            if not topic:
+                raise RuntimeError("没有活跃选题")
 
-                all_records = self.storage.query("选题库", limit=100)
+            # v3.1 改造：必须读小文长文（拓扑保证小文已完成）
+            if not asset:
+                raise RuntimeError(f"ASSET {asset_id} 不存在")
 
-                valid_status = ["生产中", "审改中"]
+            if not asset.get("文案文档链接"):
+                raise RuntimeError(
+                    f"小播被触发时，小文文档链接不存在。"
+                    f"ASSET={asset_id}，文案状态={asset.get('文案状态', 'N/A')}。"
+                    f"LangGraph 拓扑配置错误（小文 → 小播 边缺失）。"
+                )
 
-                topics = [r.data for r in all_records if r.data.get("状态") in valid_status][:10]
+            # 读小文的长文全文（v3 修复 Bug 7：不限字数）
+            long_form_full = ""
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
+                    doc_storage = FeishuDocStorage()
+                    doc_url = asset["文案文档链接"]
+                    url_str = doc_url.get("link", "") if isinstance(doc_url, dict) else doc_url
+                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ""
+                    if doc_id:
+                        long_form_full = doc_storage.read_doc_content(doc_id) or ""
+                        if long_form_full and len(long_form_full) > 100:
+                            break
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(2)
+                except Exception as e:
+                    print(f"[小播] 读取长文失败 (attempt {attempt+1}/{max_retries}): {e}")
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(2)
 
-
+            if not long_form_full or len(long_form_full) < 100:
+                raise RuntimeError(
+                    f"小文长文读取失败或内容过短。"
+                    f"ASSET={asset_id}，文案文档链接={asset.get('文案文档链接', 'N/A')}"
+                )
 
             return {
-
                 "koc": koc,
-
-                "topics": topics,
-
+                "topic": topic,
+                "asset": asset,
+                "long_form_full": long_form_full,
             }
-
         except Exception as e:
-
             print(f"[小播] 读取上游数据失败: {e}")
-
-            return {"koc": {}, "topics": []}
-
-
+            raise
 
     def _invoke_tools(self, context: dict, upstream_data: dict) -> dict:
-
-        """小播暂不需要调用外部工具。"""
-
-        return {}
-
-
+        """切换 ASSET 状态：未开始 → 生产中"""
+        asset = upstream_data.get("asset", {})
+        asset_id = asset.get("id", "")
+        if asset_id:
+            try:
+                self.storage.update("内容资产库", asset_id, {
+                    "视频状态": "生产中",
+                })
+                print(f"[小播] ASSET {asset_id} 视频状态: 生产中")
+            except Exception as e:
+                print(f"[小播] 更新 ASSET 状态失败: {e}")
+        return {"asset_id": asset_id}
 
     def _invoke_llm(self, context: dict, upstream_data: dict, tool_results: dict) -> dict:
-
-        """调用LLM生成视频脚本。
-
-
-
-        为每个选题生成：
-
-        - 抖音版脚本（30-60秒）
-
-        - B站版脚本（1-3分钟）
-
-        """
-
-        topics = upstream_data.get("topics", [])
-
-        koc = upstream_data.get("koc", {})
-
-
-
-        results = []
-
-        for topic in topics:
-
-            prompt = self._build_script_prompt(topic, koc)
-
-            try:
-
-                response = self.llm.invoke(prompt)
-
-                scripts = self._parse_llm_response(response)
-
-                results.append({
-
-                    "topic_id": topic.get("id", ""),
-
-                    "topic_title": topic.get("选题标题", ""),
-
-                    "抖音版": scripts.get("抖音版", {}),
-
-                    "B站版": scripts.get("B站版", {}),
-
-                })
-
-            except Exception as e:
-
-                print(f"[小播] LLM生成脚本失败: {e}")
-
-                results.append({
-
-                    "topic_id": topic.get("id", ""),
-
-                    "topic_title": topic.get("选题标题", ""),
-
-                    "抖音版": {},
-
-                    "B站版": {},
-
-                    "error": str(e),
-
-                })
-
-
-
-        return {"scripts": results, "count": len(results)}
-
-
-
-    def _build_script_prompt(self, topic: dict, koc: dict) -> str:
-
-        """构建视频脚本生成的LLM提示词。"""
-
-        koc_name = koc.get("KOC名称", "学AI的刘同学")
-
-        koc_tone = koc.get("语气风格", "专业但接地气，善用比喻")
-
-        koc_platform_strategy = koc.get("平台策略", "抖音重钩子，B站重深度")
-
-
-
-        topic_title = topic.get("选题标题", "")
-
-        topic_angle = topic.get("选题角度", "")
-
-        key_points = topic.get("关键信息点", "")
-
-        wechat_content = topic.get("公众号正文", "")
-
-
-
-        return f"""你是【小播 ScriptWriter】，为 KOC【{koc_name}】工作。
-
-
-
-KOC语气：{koc_tone}
-
-平台策略：{koc_platform_strategy}
-
-
-
-请为以下选题撰写视频脚本：
-
-
-
-选题：{topic_title}
-
-选题角度：{topic_angle}
-
-关键信息点：{key_points}
-
-参考正文：{wechat_content[:1500] if wechat_content else "（待生成）"}
-
-
-
-请返回JSON格式：
-
-{{
-
-  "抖音版": {{
-
-    "时长": "45秒",
-
-    "钩子开场": "0-3秒画面+口播文案",
-
-    "核心内容": "3-40秒分镜脚本，包含画面描述和口播文案",
-
-    "CTA": "40-45秒行动号召",
-
-    "字幕": ["字幕1", "字幕2", "..."],
-
-    "BGM建议": "风格描述，如'轻快电子乐，节奏感强'",
-
-    "镜头清单": [
-
-      {{"时间": "0-3s", "画面": "...", "口播": "...", "字幕": "..."}},
-
-      {{"时间": "3-15s", "画面": "...", "口播": "...", "字幕": "..."}}
-
-    ]
-
-  }},
-
-  "B站版": {{
-
-    "时长": "2分15秒",
-
-    "开场": "0-15秒，吸引注意力的开场",
-
-    "分段": [
-
-      {{"时间段": "15-60秒", "内容": "第一段内容..."}},
-
-      {{"时间段": "60-100秒", "内容": "第二段内容..."}},
-
-      {{"时间段": "100-135秒", "内容": "第三段内容..."}}
-
-    ],
-
-    "结尾": "总结+互动引导",
-
-    "字幕": ["字幕1", "字幕2", "..."],
-
-    "BGM建议": "风格描述，如'沉稳背景乐，科技感'",
-
-    "镜头清单": [
-
-      {{"时间": "0-15s", "画面": "...", "口播": "...", "字幕": "..."}},
-
-      {{"时间": "15-60s", "画面": "...", "口播": "...", "字幕": "..."}}
-
-    ]
-
-  }}
-
-}}
-
-
-
-脚本要求：
-
-1. 抖音版：
-
-   - 前3秒必须有强钩子，让人想继续看
-
-   - 节奏快，信息密度高
-
-   - 每15秒一个信息点
-
-   - 结尾有明确的CTA（关注/点赞/评论引导）
-
-
-
-2. B站版：
-
-   - 开场15秒建立期待
-
-   - 内容有层次，由浅入深
-
-   - 适合竖屏观看（9:16）
-
-   - 结尾引导互动
-
-
-
-3. 统一要求：
-
-   - 口播文案要口语化，适合念出来
-
-   - 画面描述要具体，便于拍摄/剪辑
-
-   - 字幕要简洁，突出关键词"""
-
-
-
-    def _parse_llm_response(self, response: Any) -> dict:
-
-        """解析LLM响应为视频脚本。"""
-
-        try:
-
-            if isinstance(response, str):
-
-                content = response
-
-            elif hasattr(response, 'content'):
-
-                content = response.content
-
-            else:
-
-                content = str(response)
-
-
-
-            # 尝试从markdown代码块中提取JSON
-
-            if '```json' in content:
-
-                content = content.split('```json')[1].split('```')[0]
-
-            elif '```' in content:
-
-                content = content.split('```')[1].split('```')[0]
-
-
-
-            return json.loads(content.strip())
-
-        except Exception as e:
-
-            print(f"[小播] 解析LLM响应失败: {e}")
-
-            return {"抖音版": {}, "B站版": {}}
-
-
+        """LLM 写 1 个主脚本"""
+        koc = upstream_data["koc"]
+        topic = upstream_data["topic"]
+        long_form = upstream_data.get("long_form_full", "")
+
+        # 构建 prompt
+        koc_block = render_koc_block(koc, mode="creation")
+        user_content = self._build_user_prompt(koc_block, topic, long_form)
+
+        messages = [
+            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
+
+        thinking, answer, raw = invoke_with_retry(self.llm, messages, max_retries=3)
+
+        return {
+            "script": answer,
+            "topic_id": topic.get("id", ""),
+            "topic_title": topic.get("选题标题", ""),
+            "asset_id": tool_results.get("asset_id", ""),
+        }
+
+    def _build_user_prompt(self, koc_block: str, topic: dict, long_form: str) -> str:
+        """构建用户 prompt"""
+        # v3 修复 Bug 7：不再截断为 1500 字，读全文
+        long_form_text = long_form if long_form else "（长文尚未生成）"
+
+        return f"""\
+{koc_block}
+
+<input>
+选题 ID：{topic.get('id', '')}
+选题标题：{topic.get('选题标题', '')}
+选题角度：{topic.get('选题角度', '')}
+预估爆点：{topic.get('预估爆点', '')}
+钩子类型：{topic.get('钩子类型', '')}
+
+小文写的长文全文（v3 修复 Bug 7：不再截断为 1500 字）：
+{long_form_text}
+</input>
+
+<rules>
+【核心原则：翻译长文，不另起炉灶】
+
+1. 必须保持的元素（绝对不允许改）：
+   - 选题角度（小文怎么切入的，视频开场要呼应）
+   - 核心信息点（小文给的 takeaway，视频必须给到）
+   - 钩子调性（小文用反差/数字/身份代入，视频保持同类）
+
+2. 必须重新组织的元素（视频化适配）：
+   - 长文的"H2 章节" → 视频的"分段"
+   - 长文的"段落" → 视频的"镜头"
+   - 长文的"[配图N: 描述]" → 视频的"画面切换点"
+   - 长文的"开头铺垫 3-5 句" → 视频的"钩子开场 ≤3 秒"
+
+3. 节奏适配
+   - 小文长文 1500-3000 字 → 视频 1-3 分钟（约 300-500 字口播）
+   - 必须做信息浓缩（保留 70% 核心、删 30% 铺垫）
+   - 钩子时间前置：长文最 punch 的那一句作为开场
+
+4. 镜头与长文对齐
+   - 长文有 5 个 [配图N: 描述] → 视频应有约 5 个画面切换点
+   - 每个镜头的"画面"字段，可以参考小文的占位描述
+
+【主脚本铁律（1-3 分钟）】
+
+1. 时长：1-3 分钟（默认 1 分 30 秒-2 分钟）
+2. 结构：
+   - 钩子开场（0-5 秒）
+   - 核心内容（5 秒-总时长-10秒，分 2-4 个小段）
+   - CTA（最后 5-10 秒）
+
+3. 钩子开场（关键！）：
+   - ≤ 3 秒抓住人
+   - 反差 / 数字 / 提问 / 身份代入 4 选 1
+   - 与选题钩子类型一致
+   - 必须来自长文中最 punch 的 takeaway，不许自己新编
+
+4. 镜头清单（核心交付）：
+   每行包含：
+   - 时间段（如 "0-3s"）
+   - 画面：具体描述（不要"主持人讲话"这种空话）
+   - 口播：当前时段的口播文案
+   - 字幕：精简版的关键词（比口播短 30%）
+
+5. CTA：
+   - "关注/点赞/收藏" 选 1-2 个，不要全要
+   - 与 KOC 调性一致（"咱们一起学 AI 不焦虑"）
+
+6. BGM 建议：
+   - 风格描述（如"轻快电子节奏"、"Lofi 学习风"）
+
+7. 不要直接写"4 平台脚本"！
+   - 你只出 1 个主脚本
+   - 小发会基于这份做抖音/小红书/B站/视频号的剪辑指引
+</rules>
+
+<self_check>
+输出前确认：
+□ 总时长 1-3 分钟
+□ 钩子开场 ≤ 3 秒
+□ 镜头清单每项都有 时间/画面/口播/字幕 4 个字段
+□ 画面描述具体（不是"主持人讲话"这种空话）
+□ 字幕比口播精简 30%+
+□ CTA 不滥用（关注/点赞/收藏选 1-2 个）
+□ BGM 建议有具体风格描述
+□ 没有写"抖音版/B站版"——只有 1 个主脚本
+□ 核心信息点来自长文，不另起炉灶
+</self_check>
+
+现在开始处理。
+"""
 
     def _write_storage(self, context: dict, result: dict):
+        """创建视频脚本文档 + 更新 ASSET 状态"""
+        topic_id = result.get("topic_id", "")
+        topic_title = result.get("topic_title", "")
+        asset_id = result.get("asset_id", "")
+        script = result.get("script", {})
 
-        """创建飞书云文档并回填URL。"""
+        # 格式化脚本为 Markdown
+        markdown = self._format_script(script, topic_title)
 
-        scripts = result.get("scripts", [])
+        # 创建飞书云文档
+        doc_url = ""
+        try:
+            from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
+            doc_storage = FeishuDocStorage()
+            date_str = datetime.now().strftime("%Y%m%d")
+            doc_id = doc_storage.create_doc(f"[脚本] {date_str} {topic_title}")
+            doc_storage.append_section(doc_id, markdown)
+            doc_storage.set_permissions(doc_id, share_type="tenant_readable")
+            doc_url = doc_storage.get_share_url(doc_id)
+            print(f"[小播] 创建脚本文档: {topic_title[:30]}...")
+        except Exception as e:
+            print(f"[小播] 创建脚本文档失败: {e}")
 
-        doc_storage = FeishuDocStorage()
-
-        date_str = datetime.now().strftime("%Y%m%d")
-
-
-
-        for script in scripts:
-
-            topic_id = script.get("topic_id")
-
-            topic_title = script.get("topic_title", "")
-
-            if not topic_id:
-
-                continue
-
-
-
-            script_content = {
-
-                "抖音版": script.get("抖音版", {}),
-
-                "B站版": script.get("B站版", {}),
-
-            }
-
-
-
+        # 更新 ASSET
+        if asset_id:
             try:
-
-                existing = self.storage.get_by_id("选题库", topic_id)
-
-                existing_url = existing.data.get("视频脚本文档链接", "") if existing else ""
-
-
-
-                if existing_url:
-
-                    # Handle URL field format - could be dict or string
-
-                    url_str = existing_url.get('link', '') if isinstance(existing_url, dict) else existing_url
-
-                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
-
+                if doc_url:
+                    self.storage.update("内容资产库", asset_id, {
+                        "视频状态": "已完成",
+                        "视频脚本文档链接": doc_url,
+                    })
+                    print(f"[小播] ASSET {asset_id} 视频状态: 已完成")
                 else:
-
-                    doc_id = doc_storage.create_script_doc(topic_title, date_str)
-
-
-
-                doc_markdown = self._format_script_document(topic_title, script_content)
-
-                doc_storage.append_section(doc_id, doc_markdown)
-
-
-
-                # 设置权限（组织内可查看）
-
-                doc_storage.set_permissions(doc_id, share_type="tenant_readable")
-
-                doc_url = doc_storage.get_share_url(doc_id)
-
-
-
-                print(f"[小播] 写入视频脚本: {topic_title[:30]}...")
-
-                print(f"[小播] 文档链接: {doc_url}")
-
-
-
-                self.storage.update("选题库", topic_id, {"视频脚本文档链接": doc_url})
-
+                    self.storage.update("内容资产库", asset_id, {
+                        "视频状态": "生产中",
+                    })
+                    print(f"[小播] ASSET {asset_id} 视频状态: 生产中（文档创建失败）")
             except Exception as e:
+                print(f"[小播] 更新 ASSET 失败: {e}")
 
-                print(f"[小播] 写入脚本失败: {e}")
+        result["doc_url"] = doc_url
 
+    def _format_script(self, script: dict, topic_title: str) -> str:
+        """格式化脚本为 Markdown"""
+        md = f"# [脚本] {topic_title}\n\n"
+        md += f"**总时长**: {script.get('总时长', '')}\n\n"
+        md += f"**钩子类型**: {script.get('钩子类型', '')}\n\n"
+        md += "---\n\n"
 
+        # 钩子开场
+        hook = script.get("钩子开场", {})
+        if hook:
+            md += "## 钩子开场\n\n"
+            md += f"- 时间: {hook.get('时间', '')}\n"
+            md += f"- 画面: {hook.get('画面', '')}\n"
+            md += f"- 口播: {hook.get('口播', '')}\n"
+            md += f"- 字幕: {hook.get('字幕', '')}\n\n"
 
-    def _format_script_document(self, topic_title: str, scripts: dict) -> str:
+        # 核心内容
+        core = script.get("核心内容", [])
+        if core:
+            md += "## 核心内容\n\n"
+            for segment in core:
+                md += f"### {segment.get('段落', '')} ({segment.get('时间', '')})\n\n"
+                md += f"- 画面: {segment.get('画面', '')}\n"
+                md += f"- 口播: {segment.get('口播', '')}\n"
+                md += f"- 字幕: {segment.get('字幕', '')}\n\n"
 
-        """格式化视频脚本为Markdown文档格式。"""
+        # CTA
+        cta = script.get("CTA", {})
+        if cta:
+            md += "## CTA\n\n"
+            md += f"- 时间: {cta.get('时间', '')}\n"
+            md += f"- 画面: {cta.get('画面', '')}\n"
+            md += f"- 口播: {cta.get('口播', '')}\n"
+            md += f"- 字幕: {cta.get('字幕', '')}\n\n"
 
-        content = f"# {topic_title} - 视频脚本\n\n"
+        # 镜头清单（时间码格式）
+        shots = script.get("镜头清单", [])
+        if shots:
+            md += "## 镜头清单\n\n"
+            for i, shot in enumerate(shots, 1):
+                timecode = shot.get('时间码', shot.get('时间', f'镜头{i}'))
+                scene = shot.get('画面', '')
+                audio = shot.get('口播', '')
+                subtitle = shot.get('字幕', '')
+                md += f"**{timecode}** {scene}\n\n"
+                if audio:
+                    md += f"口播: {audio[:80]}{'...' if len(audio) > 80 else ''}\n\n"
+                if subtitle:
+                    md += f"字幕: *{subtitle}*\n\n"
+                md += "---\n\n"
 
+        # BGM
+        bgm = script.get("BGM建议", "")
+        if bgm:
+            md += f"**BGM**: {bgm}\n\n"
 
+        # 剪辑节奏
+        rhythm = script.get("剪辑节奏说明", "")
+        if rhythm:
+            md += f"**剪辑节奏**: {rhythm}\n\n"
 
-        # 抖音版
+        return md
 
-        if "抖音版" in scripts:
-
-            dy = scripts["抖音版"]
-
-            content += "## 抖音版\n\n"
-
-            content += f"**时长**: {dy.get('时长', '45秒')}\n\n"
-
-            content += f"**钩子开场**: {dy.get('钩子开场', '')}\n\n"
-
-            content += f"**核心内容**: {dy.get('核心内容', '')}\n\n"
-
-            if dy.get('CTA'):
-
-                content += f"**CTA**: {dy.get('CTA')}\n\n"
-
-            if dy.get('BGM建议'):
-
-                content += f"*BGM*: {dy.get('BGM建议')}\n\n"
-
-
-
-        # B站版
-
-        if "B站版" in scripts:
-
-            bz = scripts["B站版"]
-
-            content += "## B站版\n\n"
-
-            content += f"**时长**: {bz.get('时长', '2分15秒')}\n\n"
-
-            content += f"**开场**: {bz.get('开场', '')}\n\n"
-
-            if bz.get('分段'):
-
-                content += "**分段内容**:\n\n"
-
-                for segment in bz['分段']:
-
-                    content += f"- {segment.get('时间段', '')}: {segment.get('内容', '')}\n"
-
-                content += "\n"
-
-            if bz.get('结尾'):
-
-                content += f"**结尾**: {bz.get('结尾')}\n\n"
-
-            if bz.get('BGM建议'):
-
-                content += f"*BGM*: {bz.get('BGM建议')}\n\n"
-
-
-
-        return content
-
-
-
-    def _log_work(self, context: dict, result: dict):
-
-        """记录工作日志。"""
-
-        count = result.get("count", 0)
-
-        print(f"[小播] 完成：为 {count} 个选题生成视频脚本")
-
-        super()._log_work(context, result)
-
-
-
-
-
-# 保持向后兼容的别名
 
 ScriptWriter = ScriptWriterAgent
-

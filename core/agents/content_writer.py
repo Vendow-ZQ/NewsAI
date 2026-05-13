@@ -1,507 +1,341 @@
-# -*- coding: utf-8 -*-
-"""Agent module."""
+"""小文 ContentWriter - 文字编辑 Agent (EMP-003)。
 
-SYSTEM_PROMPT = """
-
-\
-
-<role>
-
-你是「小文 ContentWriter」，NewsAI 编辑部的文字编辑，生产组成员。
-
-你的工作是：根据选题，写出 4 个平台版本的文字内容（公众号 / 小红书 / 抖音 / B站）。
-
-你写完后不再修改——审改循环由小审 + 小改负责。
-
-</role>
-
-
-
-<workflow>
-
-1. 读 <input> 中的选题方案（来自小编）和 KOC 人设
-
-2. 在 <thinking> 里规划：
-
-   - 4 平台各自的核心写作策略（受众/字数/调性差异）
-
-   - 钩子设计（标题 + 开头 3 句）
-
-   - 信息密度规划（每 100 字至少 1 个 takeaway）
-
-3. 在 <answer> 输出 4 平台完整文案
-
-</workflow>
-
-
-
-<output_format>
-
-先在 <thinking>...</thinking> 里规划（≤200字），
-
-然后在 <answer>{...}</answer> 里输出 4 平台版本 JSON。
-
-</output_format>
-
+v3.0 改造：
+- 写 1 篇长文不分平台（v2 写 4 平台版本）
+- 这是给小发后续做 4 平台分发改写的"源稿"
+- 至少 5 个 [配图N: 描述] 占位
+- 修复 KOC 注入
 """
 
 import json
-
 from datetime import datetime
-
 from typing import Any
 
-
-
-from core.agents.base import BaseAgent
-
-from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
-
-
-
+from core.agents.base import BaseAgent, current_timestamp_ms, parse_koc_data
+from core.prompts.shared.chinese_hooks import CHINESE_HOOKS_BLOCK
+from core.prompts.shared.koc_persona import render_koc_block
+from core.storage.id_generator import IDGenerator
+from core.utils.llm_output_parser import invoke_with_retry
 
 
 class ContentWriterAgent(BaseAgent):
+    """小文 EMP-003 · 文字编辑"""
 
-    """小文 ContentWriter - 文字编辑。
+    name = "小文"
+    english_name = "ContentWriter"
+    emoji = "✍️"
 
+    SYSTEM_PROMPT = """\
+<role>
+你是「小文 ContentWriter」，NewsAI 编辑部的文字编辑，生产组成员。
+你的工作是：根据选定的选题，写一篇 1000-3000 字的高质量长文。
+你不分平台——这是给小发后续做 4 平台分发改写的"源稿"。
+你写完后不再修改——审改循环由小审 + 小改负责。
+</role>
 
+<workflow>
+1. 读 <input>：选题方案 + 关联热帖原文（事实核查用）
+2. 在 <thinking> 里规划：
+   - 长文结构（开头钩子 → 主体 → 结尾互动）
+   - 信息密度规划（每 100 字 1 个 takeaway）
+   - 配图占位位置（用 [配图N: 描述] 标记）
+3. 在 <answer> 输出长文完整内容
+</workflow>
 
-    负责把选题写成4平台版本的内容，存入独立飞书云文档。
+<output_format>
+先在 <thinking>...</thinking> 写规划（≤200字），
+然后 <answer>{长文 JSON}</answer>。
 
-    """
-
-
-
-    def __init__(self, storage: Any, llm_client: Any):
-
-        super().__init__("小文", storage, llm_client)
-
-
+【长文 JSON 必须包含的字段】
+{
+  "标题": "文章标题（前8字必须有钩子）",
+  "正文": "文章完整正文内容（1000-3000字）",
+  "字数": 1234,
+  "配图占位": [
+    "[配图1: 描述图片要传达的内容]",
+    "[配图2: 描述图片要传达的内容]",
+    "[配图3: 描述图片要传达的内容]",
+    "[配图4: 描述图片要传达的内容]",
+    "[配图5: 描述图片要传达的内容]"
+  ]
+}
+</output_format>
+"""
 
     def _read_upstream(self, context: dict) -> dict:
-
-        """读取选题库中"已选"状态的选题。"""
-
+        """读 KOC + TOPIC（已选中）+ TREND（事实核查）"""
         try:
+            koc_record = self.storage.get_by_id("KOC人设", "KOC-001")
+            koc = parse_koc_data(koc_record.data) if koc_record else {}
 
-            from core.storage.interface import QueryFilter
+            # 优先使用 context 传入的 topic_id
+            topic_id = context.get("topic_id", "")
+            topic = None
 
-            filters = [QueryFilter(field="状态", operator="eq", value="已选")]
+            if topic_id:
+                topic_record = self.storage.get_by_id("选题库", topic_id)
+                topic = topic_record.data if topic_record else None
 
-            topics = self.storage.query("选题库", filters=filters, limit=10)
+            # 如果没有context，查询"已选中"状态的选题
+            if not topic:
+                topics = self.storage.query("选题库", limit=10)
+                selected_topics = [t.data for t in topics if t.data.get("选题状态") == "已选中"]
+                if selected_topics:
+                    topic = selected_topics[0]
 
-            return {"topics": [t.data for t in topics]}
+            if not topic:
+                raise RuntimeError("没有'已选中'状态的选题")
 
+            # 读关联热帖（事实核查用）
+            trend_ids = []
+            try:
+                trend_ids_raw = topic.get("关联热帖IDs", "[]")
+                if isinstance(trend_ids_raw, str):
+                    trend_ids = json.loads(trend_ids_raw)
+                else:
+                    trend_ids = trend_ids_raw
+            except Exception:
+                trend_ids = []
+
+            trends = []
+            for tid in trend_ids:
+                try:
+                    trend = self.storage.get_by_id("热帖库", tid)
+                    if trend:
+                        trends.append(trend.data)
+                except Exception:
+                    pass
+
+            return {"koc": koc, "topic": topic, "trends": trends}
         except Exception as e:
-
-            print(f"[小文] 读取选题库失败: {e}")
-
-            return {"topics": []}
-
-
+            print(f"[小文] 读取上游数据失败: {e}")
+            raise
 
     def _invoke_tools(self, context: dict, upstream_data: dict) -> dict:
+        """切换 ASSET 状态：未开始 → 生产中"""
+        topic = upstream_data["topic"]
+        asset_id = topic.get("关联资产ID", "")
 
-        """小文不需要调用外部工具，直接返回空结果。"""
+        if asset_id:
+            try:
+                self.storage.update("内容资产库", asset_id, {
+                    "文案状态": "生产中",
+                    "生产开始时间": current_timestamp_ms(),
+                })
+                # 同步 TOPIC.选题状态: 已选中 → 生产中
+                self.storage.update("选题库", topic["id"], {
+                    "选题状态": "生产中",
+                })
+                print(f"[小文] ASSET {asset_id} 文案状态: 生产中")
+            except Exception as e:
+                print(f"[小文] 更新 ASSET 状态失败: {e}")
 
-        return {}
-
-
+        return {"asset_id": asset_id}
 
     def _invoke_llm(self, context: dict, upstream_data: dict, tool_results: dict) -> dict:
-
-        """LLM生成4平台版本内容。"""
-
-        topics = upstream_data.get("topics", [])
-
-        koc = context.get("koc", {})
-
-
-
-        contents = []
-
-        for topic in topics:
-
-            prompt = self._build_writing_prompt(topic, koc)
-
-            try:
-
-                response = self.llm.invoke(prompt)
-
-                platforms_content = self._parse_llm_response(response)
-
-
-
-                contents.append({
-
-                    "topic_id": topic.get("id", ""),
-
-                    "topic_title": topic.get("选题标题", ""),
-
-                    "platforms": platforms_content,
-
-                })
-
-            except Exception as e:
-
-                print(f"[小文] LLM生成内容失败: {e}")
-
-
-
-        return {"contents": contents, "count": len(contents)}
-
-
-
-    def _build_writing_prompt(self, topic: dict, koc: dict) -> str:
-
-        """构建内容撰写提示词。"""
-
-        return f"""你是【小文 ContentWriter】，为 KOC【{koc.get('账号名', '学AI的刘同学')}】工作。
-
-
-
-KOC语气：{koc.get('语气', '玩梗活泼 + 专业硬核。让大家学到真东西，不过度渲染焦虑等情绪，注重进步性和互助性——咱们是一起进步的同学，不是被 AI 浪潮抛下的人。')}
-
-中文爆款偏好：{koc.get('中文爆款偏好', '标题前8字必有钩子；善用emoji分段；多用"咱们/我们"，少用"你"；结尾留互动钩子；拒绝标题党')}
-
-平台差异化策略：{koc.get('平台差异化策略', '公众号：深度长文；小红书：图文笔记；抖音：短视频；B站：教程视频')}
-
-
-
-请为以下选题撰写4个平台版本：
-
-
-
-选题标题：{topic.get('选题标题', '')}
-
-选题角度：{topic.get('选题角度', '')}
-
-预估爆点：{topic.get('预估爆点', '')}
-
-预估受众：{topic.get('预估受众', '')}
-
-
-
-请返回JSON格式：
-
-{{
-
-  "公众号": {{
-
-    "标题": "...",
-
-    "摘要": "...",
-
-    "正文": "...（1500-3000字）",
-
-    "配图说明": "..."
-
-  }},
-
-  "小红书": {{
-
-    "标题": "...",
-
-    "正文": "...（300-500字）",
-
-    "标签": "#AI #ChatGPT"
-
-  }},
-
-  "抖音": {{
-
-    "文案": "...（30-60秒）",
-
-    "钩子": "...",
-
-    "CTA": "..."
-
-  }},
-
-  "B站": {{
-
-    "标题": "...",
-
-    "简介": "...",
-
-    "正文": "..."
-
-  }}
-
-}}
-
-
-
-写作要求：
-
-1. 公众号：深度长文，有目录结构，信息密度高
-
-2. 小红书：标题党+emoji分段，6-9张图的建议
-
-3. 抖音：30-60秒钩子型，开场抓人，一个真知识点，行动CTA
-
-4. B站：1-3分钟教程/评测风格，有节奏感
-
-5. 所有平台保持KOC语气一致，多用"咱们/我们"
-
-6. 标题前8字必须有钩子（数字/反差/提问/身份代入）
+        """LLM 写 1 篇长文"""
+        koc = upstream_data["koc"]
+        topic = upstream_data["topic"]
+        trends = upstream_data["trends"]
+
+        # 构建 prompt
+        koc_block = render_koc_block(koc, mode="creation")
+        user_content = self._build_user_prompt(koc_block, topic, trends)
+
+        messages = [
+            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
+
+        thinking, answer, raw = invoke_with_retry(self.llm, messages, max_retries=3)
+
+        # 防御性处理：确保 answer 是 dict
+        if isinstance(answer, str):
+            # LLM 返回了字符串，包装成标准格式
+            answer = {
+                "标题": topic.get("选题标题", "未命名文章"),
+                "正文": answer,
+                "字数": len(answer),
+                "配图占位": [],
+            }
+        elif not isinstance(answer, dict):
+            answer = {
+                "标题": topic.get("选题标题", "未命名文章"),
+                "正文": str(answer) if answer else "",
+                "字数": 0,
+                "配图占位": [],
+            }
+
+        return {
+            "long_form_content": answer,
+            "topic_id": topic.get("id", ""),
+            "topic_title": topic.get("选题标题", ""),
+            "asset_id": tool_results.get("asset_id", ""),
+        }
+
+    def _build_user_prompt(self, koc_block: str, topic: dict, trends: list) -> str:
+        """构建用户 prompt"""
+        # 关联热帖信息
+        trends_text = ""
+        for t in trends:
+            trends_text += f"""\
+- 平台：{t.get('信源平台', '')}
+- 标题：{t.get('标题', '')}
+- 摘要：{t.get('原文摘要', '')[:300]}
+- 链接：{t.get('原文链接', '')}
 
 """
 
+        return f"""\
+{koc_block}
 
+{CHINESE_HOOKS_BLOCK}
 
-    def _parse_llm_response(self, response: Any) -> dict:
+<input>
+选题 ID：{topic.get('id', '')}
+选题标题：{topic.get('选题标题', '')}
+选题角度：{topic.get('选题角度', '')}
+预估爆点：{topic.get('预估爆点', '')}
+预估受众：{topic.get('预估受众', '')}
+钩子类型：{topic.get('钩子类型', '')}
 
-        """解析LLM响应。"""
+关联热帖原文（用于事实核查）：
+{trends_text}
+</input>
 
-        try:
+<rules>
+【长文写作铁律】
 
-            if isinstance(response, str):
+1. 字数：1000-3000 字（不强求 1500+）
 
-                content = response
+2. 结构（必须遵循）：
+   - 开头：3-5 句钩子，引发往下读
+   - 主体：3-5 段，每段一个独立小结论
+   - 结尾：必有评论引导
 
-            elif hasattr(response, 'content'):
+3. 标题：
+   - 与选题标题相同或微调
+   - 前 8 字必有钩子
 
-                content = response.content
+4. 配图占位（关键！）：
+   - 用 [配图1: 描述] 标记
+   - 至少 5 个配图占位（给小图用 5-8 张图素材池做参考）
+   - 每个占位都说清楚要传达什么
 
-            else:
+5. 信息密度：每 100 字至少 1 个具体细节
+   - 数据 / 引用 / 工具名 / 操作步骤
+   - 没具体 = 水文
 
-                content = str(response)
+6. 风格红线（KOC 准则）：
+   - 用"咱们/我们"，不用"你"
+   - 不写焦虑话术
+   - 不卖课不导流
+   - 不站队任何厂商
 
+7. 不分平台：
+   - 不要写"公众号版""小红书版"
+   - 这是"源稿"，小发会拆 4 平台
+</rules>
 
+<self_check>
+输出前确认：
+□ 字数 1000-3000 字
+□ 标题前 8 字真有钩子
+□ 全程用"咱们/我们"，不用"你"
+□ 没有焦虑话术 / 卖课 / 站队
+□ 至少 5 个 [配图N: 描述] 占位
+□ 每个配图占位都说清要传达什么
+□ 结尾有评论引导
+</self_check>
 
-            if '```json' in content:
-
-                content = content.split('```json')[1].split('```')[0]
-
-            elif '```' in content:
-
-                content = content.split('```')[1].split('```')[0]
-
-
-
-            return json.loads(content.strip())
-
-        except Exception as e:
-
-            print(f"[小文] 解析LLM响应失败: {e}")
-
-            return {
-
-                "公众号": {"标题": "", "摘要": "", "正文": "", "配图说明": ""},
-
-                "小红书": {"标题": "", "正文": "", "标签": ""},
-
-                "抖音": {"文案": "", "钩子": "", "CTA": ""},
-
-                "B站": {"标题": "", "简介": "", "正文": ""},
-
-            }
-
-
+现在开始处理。
+"""
 
     def _write_storage(self, context: dict, result: dict):
+        """创建飞书云文档 + 更新 ASSET 状态"""
+        topic_id = result.get("topic_id", "")
+        topic_title = result.get("topic_title", "")
+        asset_id = result.get("asset_id", "")
+        content = result.get("long_form_content", {})
 
-        """创建飞书云文档并回填URL。"""
+        # 格式化长文为 Markdown
+        markdown = self._format_long_form(content)
 
-        contents = result.get("contents", [])
+        # 创建飞书云文档
+        doc_url = ""
+        try:
+            from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
+            doc_storage = FeishuDocStorage()
+            date_str = datetime.now().strftime("%Y%m%d")
+            doc_id = doc_storage.create_post_doc(topic_title, date_str)
+            doc_storage.append_section(doc_id, markdown)
+            doc_storage.set_permissions(doc_id, share_type="tenant_readable")
+            doc_url = doc_storage.get_share_url(doc_id)
+            print(f"[小文] 创建文案文档: {topic_title[:30]}...")
+        except Exception as e:
+            print(f"[小文] 创建文案文档失败: {e}")
 
-        doc_storage = FeishuDocStorage()
-
-        date_str = datetime.now().strftime("%Y%m%d")
-
-
-
-        for content in contents:
-
-            topic_id = content.get("topic_id", "")
-
-            topic_title = content.get("topic_title", "")
-
-            platforms = content.get("platforms", {})
-
-
-
+        # 更新 ASSET
+        if asset_id:
             try:
-
-                # 检查是否已有文档链接
-
-                existing = self.storage.get_by_id("选题库", topic_id)
-
-                existing_url = existing.data.get("帖子文档链接", "") if existing else ""
-
-
-
-                if existing_url:
-
-                    # 已有文档，追加内容（理论上小文只写一次，但做保护）
-
-                    # 从URL中提取 doc_id
-
-                    # Handle URL field format - could be dict {'link': '...', 'text': '...'} or string
-
-                    url_str = existing_url.get('link', '') if isinstance(existing_url, dict) else existing_url
-
-                    doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ''
-
-                else:
-
-                    # 创建新文档
-
-                    doc_id = doc_storage.create_post_doc(topic_title, date_str)
-
-
-
-                # 构建并写入内容
-
-                doc_markdown = self._format_post_document(topic_title, platforms)
-
-                doc_storage.append_section(doc_id, doc_markdown)
-
-
-
-                # 设置权限（组织内可查看）并获取分享链接
-
-                doc_storage.set_permissions(doc_id, share_type="tenant_readable")
-
-                doc_url = doc_storage.get_share_url(doc_id)
-
-
-
-                print(f"[小文] 写入帖子文档: {topic_title[:30]}...")
-
-                print(f"[小文] 文档链接: {doc_url}")
-
-
-
-                # 更新选题库：URL + 状态
-
-                update_data = {
-
-                    "帖子文档链接": doc_url,
-
-                    "状态": "生产中",
-
-                    "生产开始时间": int(datetime.now().timestamp() * 1000),
-
-                }
-
-                self.storage.update("选题库", topic_id, update_data)
-
-            except Exception as e:
-
-                print(f"[小文] 写入文档失败: {e}")
-
-                # 失败时仍然更新状态
-
-                try:
-
-                    self.storage.update("选题库", topic_id, {
-
-                        "状态": "生产中",
-
-                        "生产开始时间": int(datetime.now().timestamp() * 1000),
-
+                if doc_url:
+                    # 文档创建成功
+                    self.storage.update("内容资产库", asset_id, {
+                        "文案状态": "已完成",
+                        "文案文档链接": doc_url,
                     })
+                    print(f"[小文] ASSET {asset_id} 文案状态: 已完成")
+                else:
+                    # 文档创建失败，状态回滚为"生产中"（可重试）
+                    self.storage.update("内容资产库", asset_id, {
+                        "文案状态": "生产中",
+                    })
+                    print(f"[小文] ASSET {asset_id} 文案状态: 生产中（文档创建失败）")
+            except Exception as e:
+                print(f"[小文] 更新 ASSET 失败: {e}")
 
-                except Exception as e2:
+        result["doc_url"] = doc_url
 
-                    print(f"[小文] 更新状态失败: {e2}")
+    def _format_long_form(self, content) -> str:
+        """格式化长文为 Markdown"""
+        # 防御性处理：确保 content 是 dict
+        if isinstance(content, str):
+            # LLM 返回了纯文本，包装成标准格式
+            content = {
+                "标题": "未命名文章",
+                "正文": content,
+                "字数": len(content),
+                "配图占位": [],
+            }
+        elif not isinstance(content, dict):
+            content = {}
 
+        title = content.get("标题", "")
+        body = content.get("正文", "")
+        word_count = content.get("字数", 0)
+        placeholders = content.get("配图占位", [])
 
+        # 如果正文为空，尝试直接使用 content 作为正文（LLM 可能返回了字符串）
+        if not body and isinstance(content, dict) and len(content) == 1:
+            # 可能是 {"key": "value"} 格式，取第一个值作为正文
+            first_value = list(content.values())[0]
+            if isinstance(first_value, str) and len(first_value) > 100:
+                body = first_value
+                word_count = len(body)
 
-    def _format_post_document(self, topic_title: str, platforms: dict) -> str:
+        md = f"# {title}\n\n"
+        md += f"*{word_count} 字*\n\n"
+        md += "---\n\n"
+        md += body if body else "（正文内容为空）"
+        md += "\n\n---\n\n"
+        md += "## 配图占位清单\n\n"
+        if placeholders:
+            for ph in placeholders:
+                md += f"- {ph}\n"
+        else:
+            md += "（无配图占位）\n"
 
-        """格式化帖子内容为Markdown文档格式。"""
+        return md
 
-        content = f"# {topic_title}\n\n"
-
-
-
-        if "公众号" in platforms:
-
-            gzh = platforms["公众号"]
-
-            content += "## 公众号版本\n\n"
-
-            content += f"**标题**: {gzh.get('标题', '')}\n\n"
-
-            content += f"**摘要**: {gzh.get('摘要', '')}\n\n"
-
-            content += f"{gzh.get('正文', '')}\n\n"
-
-            if gzh.get('配图说明'):
-
-                content += f"*配图*: {gzh.get('配图说明')}\n\n"
-
-
-
-        if "小红书" in platforms:
-
-            xhs = platforms["小红书"]
-
-            content += "## 小红书版本\n\n"
-
-            content += f"**标题**: {xhs.get('标题', '')}\n\n"
-
-            content += f"{xhs.get('正文', '')}\n\n"
-
-            if xhs.get('标签'):
-
-                content += f"*标签*: {xhs.get('标签')}\n\n"
-
-
-
-        if "抖音" in platforms:
-
-            dy = platforms["抖音"]
-
-            content += "## 抖音版本\n\n"
-
-            content += f"**钩子**: {dy.get('钩子', '')}\n\n"
-
-            content += f"{dy.get('文案', '')}\n\n"
-
-            if dy.get('CTA'):
-
-                content += f"*CTA*: {dy.get('CTA')}\n\n"
-
-
-
-        if "B站" in platforms:
-
-            bz = platforms["B站"]
-
-            content += "## B站版本\n\n"
-
-            content += f"**标题**: {bz.get('标题', '')}\n\n"
-
-            content += f"**简介**: {bz.get('简介', '')}\n\n"
-
-            content += f"{bz.get('正文', '')}\n\n"
-
-
-
-        return content
-
-
-
-    def _log_work(self, context: dict, result: dict):
-
-        """记录工作日志。"""
-
-        count = result.get("count", 0)
-
-        print(f"[小文] 完成：撰写 {count} 条选题的4平台版本")
-
-        super()._log_work(context, result)
-
-
-
-
-
-# 保持向后兼容的别名
 
 ContentWriter = ContentWriterAgent
-

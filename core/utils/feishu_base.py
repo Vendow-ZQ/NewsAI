@@ -317,7 +317,8 @@ class FeishuBaseManager:
         else:
             raise Exception(f"列出字段失败: {resp.msg}")
 
-    def add_field(self, table_id: str, field_name: str, field_type: Union[int, str] = 1) -> str:
+    def add_field(self, table_id: str, field_name: str, field_type: Union[int, str] = 1,
+                  options: List[str] = None) -> str:
         """
         添加字段（使用HTTP API，SDK不支持）
 
@@ -325,6 +326,7 @@ class FeishuBaseManager:
             table_id: 表ID
             field_name: 字段名
             field_type: 字段类型（数字或字符串）
+            options: 单选/多选字段的选项值列表
 
         Returns:
             字段ID
@@ -333,10 +335,19 @@ class FeishuBaseManager:
         if isinstance(field_type, str):
             field_type = self.FIELD_TYPES.get(field_type, 1)
 
+        # 构建请求体
+        body = {"field_name": field_name, "type": field_type}
+
+        # 如果是单选/多选字段且有选项值，添加property
+        if options and field_type in [3, 4]:  # 3=单选, 4=多选
+            body["property"] = {
+                "options": [{"name": opt} for opt in options]
+            }
+
         result = self._http_request(
             "POST",
             f"/tables/{table_id}/fields",
-            {"field_name": field_name, "type": field_type}
+            body
         )
 
         if result.get("code") == 0:
@@ -359,7 +370,7 @@ class FeishuBaseManager:
 
         Args:
             table_id: 表ID
-            fields: 字段列表 [{"name": "xxx", "type": 1}, ...]
+            fields: 字段列表 [{"name": "xxx", "type": 1, "options": [...]}, ...]
         """
         existing = self.list_fields(table_id)
 
@@ -367,7 +378,8 @@ class FeishuBaseManager:
             name = field["name"]
             if name not in existing:
                 field_type = field.get("type", 1)
-                self.add_field(table_id, name, field_type)
+                options = field.get("options")
+                self.add_field(table_id, name, field_type, options)
                 print(f"[INFO] 添加字段: {name}")
 
     # ==================== 记录操作 ====================
