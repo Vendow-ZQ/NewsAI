@@ -253,11 +253,17 @@ class ScriptWriterAgent(BaseAgent):
         # 更新 ASSET
         if asset_id:
             try:
-                self.storage.update("内容资产库", asset_id, {
-                    "视频状态": "已完成",
-                    "视频脚本文档链接": doc_url,
-                })
-                print(f"[小播] ASSET {asset_id} 视频状态: 已完成")
+                if doc_url:
+                    self.storage.update("内容资产库", asset_id, {
+                        "视频状态": "已完成",
+                        "视频脚本文档链接": doc_url,
+                    })
+                    print(f"[小播] ASSET {asset_id} 视频状态: 已完成")
+                else:
+                    self.storage.update("内容资产库", asset_id, {
+                        "视频状态": "生产中",
+                    })
+                    print(f"[小播] ASSET {asset_id} 视频状态: 生产中（文档创建失败）")
             except Exception as e:
                 print(f"[小播] 更新 ASSET 失败: {e}")
 

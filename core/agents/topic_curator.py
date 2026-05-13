@@ -246,6 +246,31 @@ class TopicCuratorAgent(BaseAgent):
         except Exception as e:
             print(f"[小编] 更新选题状态失败: {e}")
 
+        # 5. 更新关联热帖状态为"已选"
+        try:
+            # 找到最佳选题对应的candidate
+            best_candidate = None
+            for cand in candidates:
+                if cand.get("推荐优先级") == topic_ids[0][1]:
+                    best_candidate = cand
+                    break
+
+            if best_candidate:
+                related_trend_ids = best_candidate.get("关联热帖_ids", [])
+                if isinstance(related_trend_ids, str):
+                    related_trend_ids = json.loads(related_trend_ids)
+
+                for trend_id in related_trend_ids:
+                    try:
+                        self.storage.update("热帖库", trend_id, {
+                            "状态": "已选",
+                        })
+                        print(f"[小编] 热帖已选: {trend_id}")
+                    except Exception as e:
+                        print(f"[小编] 更新热帖状态失败 {trend_id}: {e}")
+        except Exception as e:
+            print(f"[小编] 更新关联热帖状态失败: {e}")
+
         result["all_topic_ids"] = [t[0] for t in topic_ids]
         result["selected_topic_id"] = best_topic_id
         result["asset_id"] = asset_id

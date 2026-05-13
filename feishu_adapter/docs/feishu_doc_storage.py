@@ -115,13 +115,35 @@ class FeishuDocStorage(DocStorage):
             # 提取文本内容
             texts = []
             for block in resp.data.items:
-                block_type = block.block_type
-                if block_type == 2:  # text block
-                    text_content = block.text.elements[0].text.content if block.text.elements else ""
-                    texts.append(text_content)
-                elif block_type in [3, 4, 5]:  # heading
-                    heading_content = block.heading.elements[0].text.content if block.heading.elements else ""
-                    texts.append(f"# {heading_content}")
+                try:
+                    block_type = block.block_type
+                    if block_type == 2:  # text block
+                        text_content = block.text.elements[0].text.content if block.text.elements else ""
+                        texts.append(text_content)
+                    elif block_type in [3, 4, 5]:  # heading
+                        # 安全访问heading属性
+                        if hasattr(block, 'heading') and block.heading and hasattr(block.heading, 'elements'):
+                            heading_content = block.heading.elements[0].text.content if block.heading.elements else ""
+                            texts.append(f"# {heading_content}")
+                    elif block_type == 6:  # list
+                        if hasattr(block, 'bullet') and block.bullet and hasattr(block.bullet, 'elements'):
+                            list_content = block.bullet.elements[0].text.content if block.bullet.elements else ""
+                            texts.append(f"- {list_content}")
+                    elif block_type == 7:  # ordered list
+                        if hasattr(block, 'ordered') and block.ordered and hasattr(block.ordered, 'elements'):
+                            list_content = block.ordered.elements[0].text.content if block.ordered.elements else ""
+                            texts.append(f"1. {list_content}")
+                    elif block_type == 11:  # quote
+                        if hasattr(block, 'quote') and block.quote and hasattr(block.quote, 'elements'):
+                            quote_content = block.quote.elements[0].text.content if block.quote.elements else ""
+                            texts.append(f"> {quote_content}")
+                    elif block_type == 14:  # code block
+                        if hasattr(block, 'code') and block.code:
+                            code_content = block.code.code_block.elements[0].text.content if block.code.code_block.elements else ""
+                            texts.append(f"```\n{code_content}\n```")
+                except Exception as e:
+                    # 跳过无法解析的block
+                    continue
 
             return "\n".join(texts)
         except Exception as e:

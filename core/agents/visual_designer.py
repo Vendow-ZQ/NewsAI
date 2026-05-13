@@ -293,11 +293,17 @@ AI 画面图额外：
         # 更新 ASSET
         if asset_id:
             try:
-                self.storage.update("内容资产库", asset_id, {
-                    "配图状态": "已完成",
-                    "图片提示词文档链接": doc_url,
-                })
-                print(f"[小图] ASSET {asset_id} 配图状态: 已完成")
+                if doc_url:
+                    self.storage.update("内容资产库", asset_id, {
+                        "配图状态": "已完成",
+                        "图片提示词文档链接": doc_url,
+                    })
+                    print(f"[小图] ASSET {asset_id} 配图状态: 已完成")
+                else:
+                    self.storage.update("内容资产库", asset_id, {
+                        "配图状态": "生产中",
+                    })
+                    print(f"[小图] ASSET {asset_id} 配图状态: 生产中（文档创建失败）")
             except Exception as e:
                 print(f"[小图] 更新 ASSET 失败: {e}")
 

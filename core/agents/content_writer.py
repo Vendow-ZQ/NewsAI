@@ -278,11 +278,19 @@ class ContentWriterAgent(BaseAgent):
         # 更新 ASSET
         if asset_id:
             try:
-                self.storage.update("内容资产库", asset_id, {
-                    "文案状态": "已完成",
-                    "文案文档链接": doc_url,
-                })
-                print(f"[小文] ASSET {asset_id} 文案状态: 已完成")
+                if doc_url:
+                    # 文档创建成功
+                    self.storage.update("内容资产库", asset_id, {
+                        "文案状态": "已完成",
+                        "文案文档链接": doc_url,
+                    })
+                    print(f"[小文] ASSET {asset_id} 文案状态: 已完成")
+                else:
+                    # 文档创建失败，状态回滚为"生产中"（可重试）
+                    self.storage.update("内容资产库", asset_id, {
+                        "文案状态": "生产中",
+                    })
+                    print(f"[小文] ASSET {asset_id} 文案状态: 生产中（文档创建失败）")
             except Exception as e:
                 print(f"[小文] 更新 ASSET 失败: {e}")
 

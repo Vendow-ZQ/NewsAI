@@ -8,6 +8,10 @@ from core.agents.topic_curator import TopicCuratorAgent
 from core.agents.content_writer import ContentWriterAgent
 from core.agents.visual_designer import VisualDesignerAgent
 from core.agents.script_writer import ScriptWriterAgent
+from core.agents.reviewer import ReviewerAgent
+from core.agents.editor import EditorAgent
+from core.agents.distributor import DistributorAgent
+from core.agents.analyst import AnalystAgent
 
 
 def _make_log(agent: str, status: str, **kwargs) -> list:
@@ -153,17 +157,17 @@ def create_reviewer_node(storage: Any, llm: Any):
         try:
             agent = ReviewerAgent(storage, llm)
             result = agent.execute(_agent_context(state))
-            review_results = result.get("review_results", [])
-            review_verdict = "通过"
+            # 获取审查结果（reviewer返回的是单条结果）
+            review_result = result.get("review_result", {})
+            review_verdict = "需修改"  # 默认需修改，直到明确通过
             revision_count = state.revision_count
-            # 处理多选题：任一需修改则整体需修改
-            for rr in review_results:
-                review_data = rr.get("review_result", {})
-                verdict = review_data.get("审查结论", "需修改")
-                if verdict == "需修改":
-                    review_verdict = "需修改"
-                    revision_count += 1
-                    break
+            # reviewer返回的是英文verdict: "pass" 或 "needs_revision"
+            verdict = review_result.get("verdict", "needs_revision")
+            if verdict == "pass":
+                review_verdict = "通过"
+            else:
+                review_verdict = "需修改"
+                revision_count += 1
             return {
                 "execution_log": _make_log("小审", "完成", verdict=review_verdict),
                 "review_verdict": review_verdict,
@@ -179,7 +183,6 @@ def create_editor_node(storage: Any, llm: Any):
     """创建小改节点（修改）。"""
     def node(state: NewsAIState) -> Dict[str, Any]:
         try:
-            from core.agents.editor import EditorAgent
             agent = EditorAgent(storage, llm)
             result = agent.execute(_agent_context(state))
             return {"execution_log": _make_log("小改", "完成", result=result)}
@@ -201,11 +204,11 @@ def create_distributor_node(storage: Any, llm: Any):
     return node
 
 
+# 小数节点
 def create_analyst_node(storage: Any, llm: Any):
     """创建小数节点（复盘）。"""
     def node(state: NewsAIState) -> Dict[str, Any]:
         try:
-            from core.agents.analyst import AnalystAgent
             agent = AnalystAgent(storage, llm)
             result = agent.execute(_agent_context(state))
             return {"execution_log": _make_log("小数", "完成", result=result)}
