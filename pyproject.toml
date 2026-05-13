@@ -16,7 +16,6 @@ dependencies = [
     "feedparser",
     "praw",
     "playwright",
-    "pyyaml",
 ]
 
 [project.optional-dependencies]

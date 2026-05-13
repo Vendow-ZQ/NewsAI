@@ -143,8 +143,15 @@ def create_production_sync_node(storage: Any, llm: Any):
                 print(f"[production_sync] 3 个生产状态全完成，触发审改阶段")
                 return {"execution_log": _make_log("production_sync", "完成", all_done=True)}
             else:
-                print(f"[production_sync] 等待中: 文案={text_status}, 配图={image_status}, 视频={video_status}")
-                return {"execution_log": _make_log("production_sync", "等待", all_done=False)}
+                # v3.1 修复：LangGraph 边是无条件的，返回"等待"不会阻止流程继续
+                # 必须抛异常来阻断，防止审改/分发读到不完整的内容资产
+                error_msg = (
+                    f"[production_sync] 生产组未完成，阻断流程。"
+                    f"文案={text_status}, 配图={image_status}, 视频={video_status}."
+                    f"ASSET={asset_id}"
+                )
+                print(error_msg)
+                raise RuntimeError(error_msg)
         except Exception as e:
             return {"execution_log": _make_log("production_sync", "失败", error=str(e)), "errors": [str(e)]}
     return node
