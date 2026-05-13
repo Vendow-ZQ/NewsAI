@@ -182,10 +182,15 @@ class BaseAgent(ABC):
 
 
 def parse_koc_data(raw_koc: dict) -> dict:
-    """解析 KOC 人设数据，将 JSON 字段展开为扁平字典。"""
+    """解析 KOC 人设数据。v3.0: 表已使用扁平字段，无需 JSON 展开。"""
     if not raw_koc:
         return {}
     result = dict(raw_koc)
+    # 兼容旧表：如果扁平字段缺失，从旧 JSON 字段和 fallback 推导
+    if "账号名" not in result:
+        result["账号名"] = raw_koc.get("人设名称", "")
+    if "一句话定位" not in result:
+        result["一句话定位"] = raw_koc.get("人设简介", "")
     for field in ["基础设定JSON", "语言风格JSON", "内容偏好JSON", "平台策略JSON"]:
         val = raw_koc.get(field, "")
         if val and isinstance(val, str):
@@ -193,12 +198,10 @@ def parse_koc_data(raw_koc: dict) -> dict:
                 parsed = json.loads(val)
                 if isinstance(parsed, dict):
                     for sub_key, sub_val in parsed.items():
-                        result[sub_key] = sub_val
+                        if sub_key not in result:
+                            result[sub_key] = sub_val
             except json.JSONDecodeError:
                 pass
-    result["账号名"] = raw_koc.get("人设名称", "")
-    result["KOC名称"] = raw_koc.get("人设名称", "")
-    result["一句话定位"] = raw_koc.get("人设简介", "")
     return result
 
 

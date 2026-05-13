@@ -58,13 +58,14 @@ def build_newsai_graph(storage: Any, llm: Any):
     # 顺序边：小哨 → 小编
     workflow.add_edge("小哨", "小编")
 
-    # Fan-out: 小编并发到生产组3人
+    # v3.1 改造：小编 → 小文（串行第1人）
     workflow.add_edge("小编", "小文")
-    workflow.add_edge("小编", "小图")
-    workflow.add_edge("小编", "小播")
 
-    # Fan-in: 3人完成后到 production_sync
-    workflow.add_edge("小文", "production_sync")
+    # v3.1 改造：小文完成后 fan-out 到小图+小播（基于小文长文翻译）
+    workflow.add_edge("小文", "小图")
+    workflow.add_edge("小文", "小播")
+
+    # Fan-in: 小图+小播完成后到 production_sync
     workflow.add_edge("小图", "production_sync")
     workflow.add_edge("小播", "production_sync")
 

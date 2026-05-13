@@ -25,9 +25,13 @@ class VisualDesignerAgent(BaseAgent):
 
     SYSTEM_PROMPT = """\
 <role>
-你是「小图 VisualDesigner」，NewsAI 编辑部的视觉设计师，生产组成员。
-你的工作是为这次选题产出 5-8 张图的描述 + prompt，作为「素材池」给小发分发时挑选。
-你不直接产出图片本身——你产出的是「图的设计方案」。
+你是「小图 VisualDesigner」，NewsAI 编辑部的视觉设计师。
+
+【你的核心工作不是创作，而是翻译】
+你读小文已经写完的长文，把长文中标记的每个 [配图N: 描述] 占位
+翻译成可执行的详细 prompt（含场景/风格/构图/否定词）。
+
+你不是从零想象——你是把小文的"略写描述"扩写为"可生图的完整 prompt"。
 
 3 类图你都要会做：
 1. 文字卡片图（HTML 模板渲染，最常用）
@@ -36,10 +40,10 @@ class VisualDesignerAgent(BaseAgent):
 </role>
 
 <workflow>
-1. 读 <input>：选题 + 小文写的长文（含配图占位）
+1. 读 <input>：选题 + 小文长文（含 [配图N: 描述] 占位）
 2. 在 <thinking> 里：
-   - 长文里的 5+ 配图占位每个适合哪种类型？
-   - 还需要补充哪些图作为"素材池"（封面/总结金句/分享卡片等）？
+   - 长文每个占位适合 3 类图中的哪种？
+   - 是否需要补充 1-3 张图（封面金句卡 / 总结对照）作为素材池增强？
 3. 在 <answer> 输出 5-8 张图的完整设计
 </workflow>
 
@@ -58,7 +62,8 @@ class VisualDesignerAgent(BaseAgent):
       "template": "card_white",
       "main_text": "主文字≤15字",
       "sub_text": "副文字≤25字",
-      "accent_emoji": "🚀"
+      "accent_emoji": "🚀",
+      "对应小文占位": "[配图1]"
     },
     ... 共5-8张图
   ],
@@ -103,9 +108,21 @@ class VisualDesignerAgent(BaseAgent):
             if not topic:
                 raise RuntimeError("没有活跃选题")
 
-            # 读小文的长文（如果有）
+            # v3.1 改造：必须读小文长文（拓扑保证小文已完成）
+            if not asset:
+                raise RuntimeError(f"ASSET {asset_id} 不存在")
+
+            if not asset.get("文案文档链接"):
+                raise RuntimeError(
+                    f"小图被触发时，小文文档链接不存在。"
+                    f"ASSET={asset_id}，文案状态={asset.get('文案状态', 'N/A')}。"
+                    f"LangGraph 拓扑配置错误（小文 → 小图 边缺失）。"
+                )
+
+            # 读取小文长文（带重试）
             long_form_content = ""
-            if asset and asset.get("文案文档链接"):
+            max_retries = 3
+            for attempt in range(max_retries):
                 try:
                     from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
                     doc_storage = FeishuDocStorage()
@@ -114,13 +131,27 @@ class VisualDesignerAgent(BaseAgent):
                     doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ""
                     if doc_id:
                         long_form_content = doc_storage.read_doc_content(doc_id) or ""
+                        if long_form_content and len(long_form_content) > 100:
+                            break
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(2)
                 except Exception as e:
-                    print(f"[小图] 读取长文失败: {e}")
+                    print(f"[小图] 读取长文失败 (attempt {attempt+1}/{max_retries}): {e}")
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(2)
+
+            if not long_form_content or len(long_form_content) < 100:
+                raise RuntimeError(
+                    f"小文长文读取失败或内容过短。"
+                    f"ASSET={asset_id}，文案文档链接={asset.get('文案文档链接', 'N/A')}"
+                )
 
             return {
                 "koc": koc,
                 "topic": topic,
-                "asset": asset or {},
+                "asset": asset,
                 "long_form_content": long_form_content,
             }
         except Exception as e:
@@ -204,6 +235,31 @@ class VisualDesignerAgent(BaseAgent):
 </input>
 
 <rules>
+【核心原则：翻译而非创作】
+
+1. 必须逐个翻译小文的 [配图N] 占位
+   - 长文有 5 个占位 → 你必须输出 5 张对应的图
+   - 不允许漏译、不允许换主题
+   - 占位的"略写描述"就是该图的"主题约束"
+
+2. 翻译质量标准
+   - 原占位："[配图1: 三款 AI 编程工具的界面同框截图，左侧标注'实测覆盖 12 个场景']"
+   - 你的翻译应包含：
+     * 完整画面描述
+     * 视觉风格（极简 UI / 商务摄影 / 二次元）
+     * 构图建议（左右分屏 / 居中聚焦 / 三宫格）
+     * 即梦 prompt（中文，具体到颜色/材质/光线）
+     * 否定词（避免出现的元素）
+
+3. 可以"补充"，但不能"替代"
+   - 长文有 5 个占位 → 你输出 5 张翻译 + 0-3 张补充
+   - 总数 5-8 张
+
+4. 补充图的用途仅限：
+   - 封面金句卡（小红书首图）
+   - 总结对照图（如果长文没有）
+   - 不允许补充"另起炉灶"另出主题的图
+
 【3 类图选择决策树】
 
 → 对比/数据/流程类（开/关对比、3 步教程、数据图） → 信息图（SVG）
@@ -212,13 +268,13 @@ class VisualDesignerAgent(BaseAgent):
 
 【输出 5-8 张图素材池的结构】
 
-必须覆盖以下用途（小发后续会按平台选用）：
-1. 「封面金句卡」（必须）—— 通用封面，文字卡片图
-2. 「正文配图 1-N」（对应小文的配图占位）—— 各类型混搭
-3. 「总结对照图」（必须）—— 信息图（对比/清单类）
-4. 「金句卡片 1-2 张」—— 文字卡片图（适合小红书）
+必须覆盖以下用途：
+1. 「封面金句卡」（必须，补充图）—— 通用封面，文字卡片图
+2. 「正文配图 1-N」（必须，翻译自小文占位）—— 各类型混搭
+3. 「总结对照图」（如需要，补充图）—— 信息图
+4. 「金句卡片 1-2 张」（如需要，补充图）—— 文字卡片图
 
-【每张图的输出字段（不同类型不同）】
+【每张图的输出字段（新增"对应小文占位"）】
 
 通用字段：
 - 图编号（"图1", "图2"...）
@@ -226,6 +282,7 @@ class VisualDesignerAgent(BaseAgent):
 - 图类型（文字卡片 / 信息图 / AI画面图）
 - 描述（一句话说明传达什么）
 - 适用平台（小发分发时参考）
+- 对应小文占位：[配图1] / [配图2] / 补充图-用途
 
 文字卡片图额外：
 - template（card_white / card_dark / card_emoji / card_minimal）
@@ -245,22 +302,22 @@ AI 画面图额外：
 - 风格描述（如"极简 UI / 商务摄影 / 二次元卡通"）
 
 【图片素材池规划原则】
+- 翻译图数量 = 小文占位数量（必须全部翻译）
+- 补充图数量 ≤ 3 张
 - 总数 5-8 张（不要超）
-- 至少 3 张文字卡片（最常用）
-- 1-2 张信息图（强力传播工具）
-- 0-2 张 AI 画面图（增强视觉冲击）
 - 平台适配：覆盖小红书（图文 9 张需求）+ 公众号（3-5 张）+ B站（封面）
 </rules>
 
 <self_check>
 输出前确认：
-□ 图素材池数量 5-8 张
-□ 每张图都标注 "图编号" 和 "适用平台"
+□ 小文每个 [配图N] 占位都有对应的翻译图
+□ 翻译图数量 = 占位数量，不遗漏
+□ 补充图 ≤ 3 张，且用途合理
+□ 每张图都标注 "对应小文占位"
 □ 文字卡片 main_text ≤ 15 字
 □ 信息图 data 字段结构匹配 template
 □ AI 画面图 prompt 含场景 + 风格 + 否定词
-□ 至少 1 张"封面"用途、1 张"总结"用途
-□ 总数不超 8 张
+□ 总数 5-8 张
 </self_check>
 
 现在开始处理。

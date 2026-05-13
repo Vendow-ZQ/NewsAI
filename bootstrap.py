@@ -263,12 +263,11 @@ async def seed_data(base: FeishuBaseManager, table_ids: Dict[str, str]):
     """
     logger.info("[3/4] 写入种子数据...")
 
-    # 定义种子数据源
+    # 定义种子数据源（KOC人设从YAML独立加载，见下方 seed_koc_from_yaml）
     seed_configs = [
         ("信源配置", "src_sources.json", None),  # 从mock_data加载并转换
         ("Agent花名册", "agent_roster.json", None),  # 从mock_data加载并转换
         ("热帖库", "trend_hotposts.json", None),  # 可选，用于demo
-        ("KOC人设", None, "KOC人设"),  # 从tables.py内置数据加载
     ]
 
     for table_name, mock_file, table_key in seed_configs:
@@ -309,6 +308,68 @@ async def seed_data(base: FeishuBaseManager, table_ids: Dict[str, str]):
             import traceback
             traceback.print_exc()
             # 不中断，继续处理其他表
+
+    # KOC人设: 从独立YAML配置文件加载
+    await seed_koc_from_yaml(base, table_ids)
+
+
+async def seed_koc_from_yaml(base: FeishuBaseManager, table_ids: Dict[str, str]):
+    """从 config/koc_profile.yaml 加载KOC人设数据并写入表。"""
+    if "KOC人设" not in table_ids:
+        logger.warning("  表不存在，跳过: KOC人设")
+        return
+
+    table_id = table_ids["KOC人设"]
+
+    try:
+        existing_records = base.list_records(table_id)
+        if existing_records:
+            logger.info(f"  [KOC人设] 已有 {len(existing_records)} 条记录，跳过")
+            return
+
+        koc_data = load_koc_from_yaml()
+        if not koc_data:
+            logger.warning("  [KOC人设] YAML中无数据")
+            return
+
+        # 转换时间字段
+        if "创建时间" in koc_data:
+            koc_data["创建时间"] = to_feishu_datetime(koc_data["创建时间"])
+
+        records = [{"fields": koc_data}]
+        record_ids = base.batch_create_records(table_id, records)
+        logger.info(f"  [KOC人设] 从YAML写入 {len(record_ids)} 条记录 ({koc_data.get('人设名称', '')})")
+
+    except Exception as e:
+        logger.error(f"  写入KOC人设失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def load_koc_from_yaml(filepath: str = None) -> Dict[str, Any]:
+    """从YAML加载KOC人设数据。
+
+    优先使用PyYAML。如果未安装，提示用户安装后重试。
+    """
+    if filepath is None:
+        filepath = os.path.join(os.path.dirname(__file__), "config", "koc_profile.yaml")
+
+    try:
+        import yaml
+    except ImportError:
+        logger.error("缺少PyYAML依赖。请运行: pip install pyyaml")
+        raise RuntimeError("缺少PyYAML依赖，无法加载 config/koc_profile.yaml")
+
+    if not os.path.exists(filepath):
+        logger.error(f"KOC人设文件不存在: {filepath}")
+        return {}
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+
+    if isinstance(data, list):
+        return data[0] if data else {}
+    return data if data else {}
 
 
 async def print_summary(base: FeishuBaseManager, table_ids: Dict[str, str]):

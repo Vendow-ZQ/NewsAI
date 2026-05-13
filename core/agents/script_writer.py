@@ -24,19 +24,26 @@ class ScriptWriterAgent(BaseAgent):
 
     SYSTEM_PROMPT = """\
 <role>
-你是「小播 ScriptWriter」，NewsAI 编辑部的短视频编剧，生产组成员。
-你的工作是：根据选题 + 小文的长文，写一份 1-3 分钟的主视频脚本。
-注意：你只出 1 个主脚本——小发分发时会标注"抖音版剪辑指引"（保留哪些镜头）。
-你的脚本必须包含：完整台本 / 分镜 / 时长 / 钩子开场 / 核心内容 / CTA / 字幕 / BGM建议 / 镜头清单。
+你是「小播 ScriptWriter」，NewsAI 编辑部的短视频编剧。
+
+【你的核心工作是翻译，不是另起炉灶】
+你读小文写完的长文，把它"翻译"成一份 1-3 分钟的视频脚本。
+
+"翻译"的意思：
+- 保持小文的选题角度（怎么切入的）
+- 保持核心信息点（讲了什么 takeaway）
+- 保持钩子调性（用的什么类型钩子）
+- 但要重新组织为视频化的镜头/口播/字幕结构
+
+你只出 1 个主脚本——小发分发时会标注"抖音版剪辑指引"（保留哪些镜头）。
 </role>
 
 <workflow>
-1. 读 <input>：选题 + 小文的长文（全文）
-2. 在 <thinking> 里规划：
-   - 主脚本总时长（1-3 分钟）
-   - 钩子开场（≤3 秒）的具体设计
-   - 主体节奏（每 5-10 秒一个镜头切换）
-   - CTA 设计
+1. 读 <input>：选题 + 小文长文（全文）
+2. 在 <thinking> 里：
+   - 长文哪些点必须保留？哪些可以删？
+   - 长文的钩子怎么前置到 0-3 秒？
+   - 长文的 H2 章节如何对应视频的分段？
 3. 在 <answer> 输出完整脚本
 </workflow>
 
@@ -97,9 +104,21 @@ class ScriptWriterAgent(BaseAgent):
             if not topic:
                 raise RuntimeError("没有活跃选题")
 
+            # v3.1 改造：必须读小文长文（拓扑保证小文已完成）
+            if not asset:
+                raise RuntimeError(f"ASSET {asset_id} 不存在")
+
+            if not asset.get("文案文档链接"):
+                raise RuntimeError(
+                    f"小播被触发时，小文文档链接不存在。"
+                    f"ASSET={asset_id}，文案状态={asset.get('文案状态', 'N/A')}。"
+                    f"LangGraph 拓扑配置错误（小文 → 小播 边缺失）。"
+                )
+
             # 读小文的长文全文（v3 修复 Bug 7：不限字数）
             long_form_full = ""
-            if asset and asset.get("文案文档链接"):
+            max_retries = 3
+            for attempt in range(max_retries):
                 try:
                     from feishu_adapter.docs.feishu_doc_storage import FeishuDocStorage
                     doc_storage = FeishuDocStorage()
@@ -108,13 +127,27 @@ class ScriptWriterAgent(BaseAgent):
                     doc_id = url_str.split("/docx/")[-1].split("?")[0] if url_str else ""
                     if doc_id:
                         long_form_full = doc_storage.read_doc_content(doc_id) or ""
+                        if long_form_full and len(long_form_full) > 100:
+                            break
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(2)
                 except Exception as e:
-                    print(f"[小播] 读取长文失败: {e}")
+                    print(f"[小播] 读取长文失败 (attempt {attempt+1}/{max_retries}): {e}")
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(2)
+
+            if not long_form_full or len(long_form_full) < 100:
+                raise RuntimeError(
+                    f"小文长文读取失败或内容过短。"
+                    f"ASSET={asset_id}，文案文档链接={asset.get('文案文档链接', 'N/A')}"
+                )
 
             return {
                 "koc": koc,
                 "topic": topic,
-                "asset": asset or {},
+                "asset": asset,
                 "long_form_full": long_form_full,
             }
         except Exception as e:
@@ -179,6 +212,28 @@ class ScriptWriterAgent(BaseAgent):
 </input>
 
 <rules>
+【核心原则：翻译长文，不另起炉灶】
+
+1. 必须保持的元素（绝对不允许改）：
+   - 选题角度（小文怎么切入的，视频开场要呼应）
+   - 核心信息点（小文给的 takeaway，视频必须给到）
+   - 钩子调性（小文用反差/数字/身份代入，视频保持同类）
+
+2. 必须重新组织的元素（视频化适配）：
+   - 长文的"H2 章节" → 视频的"分段"
+   - 长文的"段落" → 视频的"镜头"
+   - 长文的"[配图N: 描述]" → 视频的"画面切换点"
+   - 长文的"开头铺垫 3-5 句" → 视频的"钩子开场 ≤3 秒"
+
+3. 节奏适配
+   - 小文长文 1500-3000 字 → 视频 1-3 分钟（约 300-500 字口播）
+   - 必须做信息浓缩（保留 70% 核心、删 30% 铺垫）
+   - 钩子时间前置：长文最 punch 的那一句作为开场
+
+4. 镜头与长文对齐
+   - 长文有 5 个 [配图N: 描述] → 视频应有约 5 个画面切换点
+   - 每个镜头的"画面"字段，可以参考小文的占位描述
+
 【主脚本铁律（1-3 分钟）】
 
 1. 时长：1-3 分钟（默认 1 分 30 秒-2 分钟）
@@ -191,6 +246,7 @@ class ScriptWriterAgent(BaseAgent):
    - ≤ 3 秒抓住人
    - 反差 / 数字 / 提问 / 身份代入 4 选 1
    - 与选题钩子类型一致
+   - 必须来自长文中最 punch 的 takeaway，不许自己新编
 
 4. 镜头清单（核心交付）：
    每行包含：
@@ -221,6 +277,7 @@ class ScriptWriterAgent(BaseAgent):
 □ CTA 不滥用（关注/点赞/收藏选 1-2 个）
 □ BGM 建议有具体风格描述
 □ 没有写"抖音版/B站版"——只有 1 个主脚本
+□ 核心信息点来自长文，不另起炉灶
 </self_check>
 
 现在开始处理。

@@ -300,34 +300,61 @@ DATA_FIELDS: List[Dict[str, Any]] = [
 
 
 # =============================================================================
-# 表6: KOC人设 (KOC) - v2 不变
+# 表6: KOC人设 (KOC) - v3.0 扁平字段版
 # =============================================================================
+# KOC 人设的唯一数据源: config/koc_profile.yaml
+# 修改请先编辑 YAML，然后删除飞书 Base 旧表重新 bootstrap
 
 KOC_FIELDS: List[Dict[str, Any]] = [
+    # 主键
     make_field("id", FIELD_TYPE_TEXT, required=True),
+
+    # 身份定位
     make_field("人设名称", FIELD_TYPE_TEXT, required=True),
-    make_field("人设简介", FIELD_TYPE_TEXT, required=True),
-    make_field("基础设定JSON", FIELD_TYPE_TEXT, required=True),
-    make_field("语言风格JSON", FIELD_TYPE_TEXT, required=True),
-    make_field("内容偏好JSON", FIELD_TYPE_TEXT, required=True),
-    make_field("平台策略JSON", FIELD_TYPE_TEXT, required=True),
+    make_field("账号名", FIELD_TYPE_TEXT, required=True),
+    make_field("一句话定位", FIELD_TYPE_TEXT, required=True),
+    make_field("领域", FIELD_TYPE_MULTI_SELECT, required=True,
+               options=["AI 资讯", "AI 教程", "AI 工具", "AI 产品测评"]),
+    make_field("语气", FIELD_TYPE_TEXT, required=True),
+
+    # 受众画像
+    make_field("目标受众", FIELD_TYPE_TEXT, required=True),
+    make_field("受众痛点", FIELD_TYPE_TEXT, required=True),
+    make_field("受众期待", FIELD_TYPE_TEXT, required=True),
+
+    # 内容偏好
+    make_field("偏好选题类型", FIELD_TYPE_MULTI_SELECT, required=True,
+               options=["新模型发布", "新工具评测", "行业八卦", "实操教程"]),
+    make_field("禁区话题", FIELD_TYPE_TEXT, required=True),
+    make_field("偏爱内容结构", FIELD_TYPE_MULTI_SELECT, required=True,
+               options=["反转开头", "对比清单", "实操步骤流", "干货合集"]),
+    make_field("中文爆款偏好", FIELD_TYPE_TEXT, required=True),
+
+    # 视觉风格
+    make_field("视觉风格", FIELD_TYPE_MULTI_SELECT,
+               options=["简洁明快", "信息密度高", "适合多平台适配"]),
+
+    # 分发偏好
+    make_field("主战场平台", FIELD_TYPE_MULTI_SELECT, required=True,
+               options=["公众号", "小红书", "抖音", "B站竖屏"]),
+    make_field("各平台账号", FIELD_TYPE_TEXT, required=True),
+    make_field("发布频率", FIELD_TYPE_TEXT, required=True),
+    make_field("偏好发布时段", FIELD_TYPE_MULTI_SELECT,
+               options=["早 7-9", "中 12-13", "晚 19-22", "夜 22-24"]),
+    make_field("平台差异化策略", FIELD_TYPE_TEXT, required=True),
+
+    # 参考样本
+    make_field("参考博主", FIELD_TYPE_TEXT),
+    make_field("不想成为的样子", FIELD_TYPE_TEXT, required=True),
+    make_field("自我审美准则", FIELD_TYPE_TEXT),
+
+    # 元数据
     make_field("是否默认", FIELD_TYPE_CHECKBOX, required=True),
     make_field("创建时间", FIELD_TYPE_DATETIME, required=True),
 ]
 
-KOC_SEED_DATA = [
-    {
-        "id": "KOC-001",
-        "人设名称": "学AI的刘同学",
-        "人设简介": "一个正在学习AI的产品经理，喜欢分享实用的AI工具和技巧",
-        "基础设定JSON": '{"身份": "产品经理", "年龄": "28岁", "城市": "北京"}',
-        "语言风格JSON": '{"语气": "亲切友好", "口头禅": "说实话", "emoji": "适度使用"}',
-        "内容偏好JSON": '{"结构": "问题-方案-案例", "偏好": "实用工具/效率提升"}',
-        "平台策略JSON": '{"公众号": "深度长文", "小红书": "图文笔记", "抖音": "短视频", "B站": "教程视频"}',
-        "是否默认": True,
-        "创建时间": "2026-05-01T00:00:00",
-    }
-]
+# KOC 种子数据已迁移到 config/koc_profile.yaml，不再硬编码于此。
+# bootstrap.py 初始化时会从 YAML 读取并写入表。
 
 
 # =============================================================================
