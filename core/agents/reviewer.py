@@ -152,8 +152,9 @@ class ReviewerAgent(BaseAgent):
         forced_pass = answer.get("forced_pass", False)
         issues = answer.get("issues", [])
 
-        # 如果 revision_count >= 3 且 verdict 不是 pass，强制改为 pass
-        if revision_count >= 3 and verdict != "pass":
+        # v3.2 修复：revision_count 是已完成轮次，new_round = revision_count + 1
+        # 当 revision_count >= 2 时，本轮是第 3 轮或更多，强制通过
+        if revision_count >= 2 and verdict != "pass":
             verdict = "pass"
             forced_pass = True
             answer["verdict"] = "pass"
@@ -162,7 +163,7 @@ class ReviewerAgent(BaseAgent):
                 f"⚠️ 达到最大审改轮次（3 轮），强制通过。"
                 f"仍有 {len(issues)} 处遗留问题（详见 issues），建议人工 review。"
             )
-            print(f"[小审] 第 {revision_count} 轮强制通过，保留 {len(issues)} 处遗留问题")
+            print(f"[小审] 第 {revision_count + 1} 轮强制通过，保留 {len(issues)} 处遗留问题")
 
         return {
             "review_result": answer,

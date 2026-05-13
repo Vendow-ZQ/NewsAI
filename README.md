@@ -124,8 +124,8 @@ python bootstrap.py
 功能：
 - ✅ 检查环境变量
 - ✅ 连接飞书Bitable
-- ✅ 创建7张表（信源配置/热帖库/选题库/内容资产库/数据库/KOC人设/Agent协作日志）
-- ✅ 插入种子数据（8信源+9热帖+1KOC+9Agent花名册）
+- ✅ 创建8张表（信源配置/热帖库/选题库/内容资产库/数据库/KOC人设/Agent花名册/Agent协作日志）
+- ✅ 插入种子数据（7信源+1KOC+9Agent花名册）
 - ✅ 打印Base链接
 
 ### 运行
@@ -134,19 +134,22 @@ python bootstrap.py
 # 跑一轮完整流程
 python run.py --once
 
-# 单独调试某个Agent
-python run.py --agent trend    # 小哨
-python run.py --agent topic    # 小编
-python run.py --agent content  # 小文
-python run.py --agent visual   # 小图
-python run.py --agent script   # 小播
-python run.py --agent review   # 小审
-python run.py --agent edit     # 小改
-python run.py --agent distribute # 小发
-python run.py --agent analyze  # 小数
+# 指定选题运行
+python run.py --once --topic TOPIC-20260513-001
 
-# 指定topic运行
-python run.py --once --topic TOPIC-20260512-ABCD
+# 单独调试某个Agent
+python run.py --agent trend      # 小哨
+python run.py --agent topic      # 小编
+python run.py --agent content    # 小文
+python run.py --agent visual     # 小图
+python run.py --agent script     # 小播
+python run.py --agent review     # 小审
+python run.py --agent edit       # 小改
+python run.py --agent distribute # 小发
+python run.py --agent analyze    # 小数
+
+# 生成Mock数据（小数前置脚本）
+python scripts/mock_data_demo.py
 ```
 
 ---
@@ -187,7 +190,7 @@ NewsAI/
 ├── 飞书适配层 (feishu_adapter/)
 │   ├── feishu_storage.py     # Storage接口实现
 │   └── base/
-│       ├── tables.py         # 7张表Schema+种子数据
+│       ├── tables.py         # 8张表Schema+种子数据
 │       └── id_mapping.py     # 业务ID↔record_id映射
 │
 ├── scripts/
@@ -195,7 +198,9 @@ NewsAI/
 │   ├── verification/         # 端到端验证脚本
 │   │   ├── e2e_verify_v2.py  # v3.1 完整流程验证
 │   │   └── e2e_verify.py     # v3.0 验证脚本
-│   └── mock_data_demo.py     # 数据库 mock 数据生成（演示用）
+│   ├── check_base_status.py  # Base状态诊断
+│   ├── show_prompts.py       # 查看所有Agent Prompt
+│   └── mock_data_demo.py     # 数据库 mock 数据生成（小数前置脚本）
 │
 ├── tests/                    # 测试文件
 ├── reports/                  # 测试报告（e2e_report_*.json）
@@ -291,14 +296,20 @@ NewsAI/
 
 ### Step 6: 数据分析（小数）
 
-- 读取已发布选题
-- 读 **mock_data/analytics_mock.json** 按选题优先级匹配档位
-- LLM 分析：
-  - 综合评分（0-1，5平台加权）
-  - 爆点验证（验证成功/部分验证/未爆）
-  - 平台表现（最佳/最差平台）
-  - 成败分析 + 选题建议
-- 写入**数据库**
+**前置**：先运行 `python scripts/mock_data_demo.py` 生成模拟数据到数据库表。
+
+- 读取 **数据库** 表中最新记录（数据状态="待分析"）
+- 读取关联选题、资产、分发文档摘要
+- LLM 深度分析：
+  - 数据与选题策划的关联分析
+  - 各平台差异原因分析
+  - 内容质量归因
+  - 3-5 条可沉淀经验
+  - 选题策略优化建议
+- 产出：
+  - **经验总结文档**（飞书云文档）
+  - **数据分析文档**（飞书云文档）
+- 更新数据库表：数据状态→"已分析"，记录文档链接
 
 ---
 
@@ -306,7 +317,7 @@ NewsAI/
 
 | 表名 | 用途 | 记录数 |
 |------|------|--------|
-| **信源配置** | 7个信息源的配置 | 8条（种子） |
+| **信源配置** | 7个信息源的配置 | 7条（种子） |
 | **热帖库** | 小哨采集的原始内容（含原文链接、原文摘要） | 21条/轮 |
 | **选题库** | 小编筛选后的选题方案（含原文摘要、数据回流ID） | 3条/轮 |
 | **内容资产库** | 生产流水线+所有文档链接（文案/配图/视频/审改/分发） | 1条/选题 |
@@ -339,7 +350,7 @@ NewsAI/
 |------|------|------|
 | 编排引擎 | **LangGraph** | 状态图驱动9 Agent协作 |
 | LLM | **Doubao 2.0** (火山方舟) | 通过OpenAI协议调用 |
-| 存储 | **飞书 Bitable** | 7张多维表格，无外部数据库 |
+| 存储 | **飞书 Bitable** | 8张多维表格，无外部数据库 |
 | SDK | lark-oapi + langchain-openai | 飞书+LLM双端对接 |
 | 工作流 | 状态机驱动 | Bitable状态流转而非内存状态 |
 

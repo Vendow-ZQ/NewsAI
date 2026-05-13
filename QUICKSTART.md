@@ -1,241 +1,497 @@
-# NewsAI 快速运转指南
+# NewsAI 使用手册
 
-## 🚀 一键启动（推荐）
+> 本文档覆盖 NewsAI 从初始化到日常使用的完整操作指南。v3.1 版本。
 
-### 步骤1：环境检查
+---
+
+## 目录
+
+1. [启动项目](#1-启动项目)
+2. [创建表格](#2-创建表格)
+3. [更改预设内容](#3-更改预设内容)
+4. [更改 Agent Prompt](#4-更改-agent-prompt)
+5. [启动完整流程](#5-启动完整流程)
+6. [单独启动某个 Agent](#6-单独启动某个-agent)
+7. [启动数据 Mock（小数前置脚本）](#7-启动数据-mock小数前置脚本)
+8. [运行小数分析](#8-运行小数分析)
+
+---
+
+## 1. 启动项目
+
+### 1.1 环境要求
+
+- Python 3.11+
+- 飞书企业账号（用于 Bitable 存储）
+- 火山方舟 API Key（用于 LLM 调用）
+
+### 1.2 安装依赖
+
 ```bash
-# 检查Python版本（需3.8+）
-python --version
-
-# 检查依赖是否安装
-pip list | findstr lark-oapi
-pip list | findstr langgraph
-pip list | findstr loguru
+cd D:\Code\NewsAI
+pip install -e .
 ```
 
-### 步骤2：配置环境变量
+### 1.3 配置环境变量
+
 ```bash
-# 复制示例文件
 copy .env.example .env
-
-# 编辑 .env 文件，填写以下信息
-LARK_APP_ID=你的飞书应用ID
-LARK_APP_SECRET=你的飞书应用密钥
-LARK_BASE_APP_TOKEN=你的BaseToken（可选，bootstrap会提示创建）
-ARK_API_KEY=你的豆包API密钥
 ```
 
-### 步骤3：一键初始化（只需运行一次）
+编辑 `.env` 文件，填入以下密钥：
+
+| 变量名 | 说明 | 获取方式 |
+|--------|------|----------|
+| `LARK_APP_ID` | 飞书应用 ID | 飞书开放平台 → 应用管理 |
+| `LARK_APP_SECRET` | 飞书应用密钥 | 同上 |
+| `LARK_BASE_APP_TOKEN` | 多维表格 Token | Base 链接中截取 |
+| `ARK_API_KEY` | 火山方舟 API Key | 火山引擎控制台 |
+
+### 1.4 初始化（一键建表 + 种子数据）
+
 ```bash
 python bootstrap.py
 ```
 
-**这个脚本会做什么：**
-1. 检查环境变量
-2. 连接飞书Base
-3. 创建7张表（信源配置/热帖库/选题库/数据库/KOC人设/Agent花名册/Agent协作日志）
-4. 插入27条种子数据
-5. 打印Base链接
+输出示例：
 
-### 步骤4：运行完整流程
+```
+=== NewsAI Bootstrap ===
+[0/4] 检查环境变量... 通过
+[1/4] 验证连接飞书Base... 成功! 连接 8 表
+[2/4] 创建/验证表... 完成
+  信源配置        : 7 条种子数据
+  KOC人设        : 1 条种子数据
+  Agent花名册    : 9 条种子数据
+[4/4] 生成摘要... 完成
+
+Base链接: https://base.feishu.cn/xxx
+```
+
+---
+
+## 2. 创建表格
+
+### 2.1 自动创建
+
+`bootstrap.py` 会自动创建 **8 张表**：
+
+| # | 表名 | 用途 | ID前缀 |
+|---|------|------|--------|
+| 1 | **信源配置** | 7个信息源的配置参数 | SRC |
+| 2 | **热帖库** | 小哨采集的原始热帖 | TREND |
+| 3 | **选题库** | 小编筛选后的选题方案 | TOPIC |
+| 4 | **内容资产库** | 生产流水线 + 所有文档链接 | ASSET |
+| 5 | **数据库** | 小数的数据分析结果 | DATA |
+| 6 | **KOC人设** | 虚拟KOC的人设设定 | KOC |
+| 7 | **Agent花名册** | 9个Agent的档案信息 | EMP |
+| 8 | **Agent协作日志** | 执行轨迹记录 | LOG |
+
+### 2.2 手动检查表状态
+
 ```bash
-# 方式1：跑一轮完整流程
+python scripts/check_base_status.py
+```
+
+需要设置 `PYTHONPATH`：
+
+```bash
+# PowerShell
+$env:PYTHONPATH = "."; python scripts/check_base_status.py
+
+# Bash (Linux/Mac)
+PYTHONPATH=. python scripts/check_base_status.py
+```
+
+### 2.3 重新创建表格
+
+如果表结构需要更新（如新增字段）：
+
+1. 修改 `feishu_adapter/base/tables.py` 中的字段定义
+2. 在飞书 Base 中手动删除旧表
+3. 重新运行 `python bootstrap.py`
+
+---
+
+## 3. 更改预设内容
+
+### 3.1 更改 KOC 人设
+
+**方式一：直接修改代码（推荐，可版本控制）**
+
+编辑 `feishu_adapter/base/tables.py` 中的 `KOC_SEED_DATA`：
+
+```python
+KOC_SEED_DATA = [
+    {
+        "id": "KOC-001",
+        "账号名": "学AI的刘同学",      # ← 修改这里
+        "一句话定位": "...",           # ← 修改这里
+        "领域": ["AI 资讯", "AI 工具"], # ← 修改这里
+        "语气": "...",                 # ← 修改这里
+        # ... 其他字段
+    }
+]
+```
+
+**方式二：直接在飞书 Base 中修改**
+
+登录飞书 → 打开 NewsAI Base → 找到 **KOC人设** 表 → 直接编辑对应字段。
+
+> 注意：方式二修改后不会被代码记录，下次 bootstrap 会覆盖。如需持久化，请同时修改 `tables.py`。
+
+**字段映射说明**：
+
+| 字段 | 影响的 Agent |
+|------|-------------|
+| `领域`、`偏好选题类型` | 小哨（决定监控哪些信息源） |
+| `一句话定位`、`语气`、`受众痛点` | 小编、小文、小图、小播 |
+| `禁区话题`、`不想成为的样子` | 小审（审查红线） |
+| `主战场平台`、`发布频率` | 小发（分发策略） |
+| `目标受众`、`受众期待` | 小数（数据复盘对照） |
+
+### 3.2 更改 Agent 花名册
+
+编辑 `feishu_adapter/base/tables.py` 中的 `EMP_SEED_DATA`：
+
+```python
+EMP_SEED_DATA = [
+    {
+        "id": "EMP-001",
+        "花名": "小哨",
+        "英文代号": "TrendScout",
+        "部门": "信息组",
+        "调用模型": "Doubao-pro-32k",  # ← 可修改模型
+        # ...
+    },
+    # ...
+]
+```
+
+### 3.3 更改信源配置
+
+编辑 `feishu_adapter/base/tables.py` 中的 `SOURCE_CONFIG_SEED_DATA`，或修改 `mock_data/` 目录下的 JSON 文件：
+
+```
+mock_data/
+├── arxiv_papers.json      # arXiv 论文
+├── hackernews_hot.json    # HN 热帖
+├── github_trending.json   # GitHub 趋势
+├── reddit_posts.json      # Reddit 帖子
+├── x_hot.json             # X(Twitter) 热帖
+├── xiaohongshu_hot.json   # 小红书
+└── douyin_hot.json        # 抖音
+```
+
+修改后重新运行 `python bootstrap.py` 生效。
+
+---
+
+## 4. 更改 Agent Prompt
+
+### 4.1 Agent System Prompt（角色定义）
+
+每个 Agent 的 System Prompt 定义在其对应的 Python 文件中：
+
+| Agent | 文件路径 | System Prompt 变量名 |
+|-------|----------|---------------------|
+| 小哨 | `core/agents/trend_scout.py` | `SYSTEM_PROMPT` |
+| 小编 | `core/agents/topic_curator.py` | `SYSTEM_PROMPT` |
+| 小文 | `core/agents/content_writer.py` | `SYSTEM_PROMPT` |
+| 小图 | `core/agents/visual_designer.py` | `SYSTEM_PROMPT` |
+| 小播 | `core/agents/script_writer.py` | `SYSTEM_PROMPT` |
+| 小审 | `core/agents/reviewer.py` | `SYSTEM_PROMPT` |
+| 小改 | `core/agents/editor.py` | `SYSTEM_PROMPT` |
+| 小发 | `core/agents/distributor.py` | `SYSTEM_PROMPT_STEP1` / `SYSTEM_PROMPT_STEP2` |
+| 小数 | `core/agents/analyst.py` | `SYSTEM_PROMPT` |
+
+**修改示例**（小审的审查标准）：
+
+```python
+# core/agents/reviewer.py
+class ReviewerAgent(BaseAgent):
+    SYSTEM_PROMPT = """\
+<role>
+你是「小审 Reviewer」，NewsAI 编辑部的审核员...
+# ← 在这里修改角色定义、审查标准
+</role>
+"""
+```
+
+### 4.2 共享 Prompt 模块
+
+| 模块 | 文件路径 | 用途 |
+|------|----------|------|
+| KOC 人设渲染 | `core/prompts/shared/koc_persona.py` | 所有 Agent 读取 KOC 人设 |
+| 中文爆款基因库 | `core/prompts/shared/chinese_hooks.py` | 中文内容爆款公式 |
+
+### 4.3 User Prompt（动态构建）
+
+每个 Agent 的 `_build_user_prompt()` 方法负责拼接具体的任务 prompt：
+
+```python
+# core/agents/content_writer.py
+class ContentWriterAgent(BaseAgent):
+    def _build_user_prompt(self, koc_block, topic, trends):
+        # ← 在这里修改 prompt 模板
+        return f"""\
+{koc_block}
+<input>
+选题标题：{topic.get('选题标题', '')}
+# ...
+</input>
+"""
+```
+
+### 4.4 Prompt 查看工具
+
+```bash
+python scripts/show_prompts.py
+```
+
+显示所有 Agent 的 Prompt 方法名和预览（前300字符）。
+
+---
+
+## 5. 启动完整流程
+
+### 5.1 跑一轮完整流程
+
+```bash
 python run.py --once
-
-# 方式2：指定选题ID运行
-python run.py --once --topic TOPIC-20260507-001
-
-# 方式3：单独运行某个Agent（调试用）
-python run.py --agent trend    # 只运行小哨
-python run.py --agent topic    # 只运行小编
-python run.py --agent review   # 只运行小审
 ```
 
----
+流程顺序：
 
-## 📋 分步运转（排查用）
+```
+小哨(采集) → 小编(策划) → 小文(长文)
+                                      ↓
+                          [并行] 小图(配图) + 小播(脚本)
+                                      ↓
+                          production_sync（3状态全完成才放行）
+                                      ↓
+                          小审(审查) ←→ 小改(修改) [最多3轮]
+                                      ↓
+                          小发(分发) → 小数(分析) → END
+```
 
-### 第1步：检查飞书连接
+### 5.2 指定选题运行
+
 ```bash
-python -c "from core.utils.feishu_base import FeishuBaseManager; bm = FeishuBaseManager(); print('连接成功' if bm.app_token else '连接失败')"
+python run.py --once --topic TOPIC-20260513-001
 ```
 
-### 第2步：检查表是否创建
+### 5.3 查看运行日志
+
 ```bash
-# 查看Base中有哪些表
-python -c "
-from core.utils.feishu_base import FeishuBaseManager
-bm = FeishuBaseManager()
-tables = bm.list_tables()
-for t in tables:
-    print(f'{t.name}: {t.table_id}')
-"
-```
-
-### 第3步：检查种子数据
-```bash
-# 查看热帖库有多少条记录
-python -c "
-from feishu_adapter.feishu_storage import FeishuStorage
-storage = FeishuStorage()
-posts = storage.query('trend', limit=5)
-print(f'热帖库有 {len(posts)} 条记录')
-for p in posts[:3]:
-    print(f'  - {p.get(\"id\")}: {p.get(\"标题\", \"\")[:30]}')
-"
-```
-
-### 第4步：手动触发小哨采集
-```bash
-python -c "
-import asyncio
-from core.agents.trend_scout import TrendScoutAgent
-from feishu_adapter.feishu_storage import FeishuStorage
-
-async def test():
-    storage = FeishuStorage()
-    agent = TrendScoutAgent(storage, None)
-    result = await agent.execute({})
-    print(f'采集完成: {result}')
-
-asyncio.run(test())
-"
-```
-
----
-
-## 🔧 常见问题排查
-
-### 问题1：编码错误（中文乱码）
-```bash
-# PowerShell中设置UTF-8
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-
-# 或者在命令前加chcp
-chcp 65001
-python run.py --once
-```
-
-### 问题2：模块导入错误
-```bash
-# 确保在项目根目录
-cd D:\Code\NewsAI
-
-# 安装依赖
-pip install -e .
-```
-
-### 问题3：飞书权限错误（91403）
-```bash
-# 检查应用是否有Base权限
-# 1. 登录飞书开放平台
-# 2. 进入应用管理
-# 3. 添加权限：bitable:record（读取/写入/更新记录）
-# 4. 重新获取app_token
-```
-
-### 问题4：LLM超时
-```bash
-# 编辑 core/llm/client.py
-# 增加超时时间：timeout=300（默认120秒可能不够）
-```
-
----
-
-## 📊 正常运转的标志
-
-### 成功运行bootstrap.py后：
-```
-✅ 环境检查通过
-✅ 已连接飞书Base: https://base.feishu.cn/xxx
-✅ 创建表成功: src_sources
-✅ 创建表成功: trend_hotposts
-✅ 创建表成功: topic_posts
-✅ 创建表成功: data_analytics
-✅ 创建表成功: koc_profile
-✅ 创建表成功: agent_roster
-✅ 创建表成功: agent_logs
-✅ 插入种子数据: 27条
-
-🎉 初始化完成！Base链接: https://base.feishu.cn/xxx
-```
-
-### 成功运行run.py后：
-```
-开始一轮完整流程...
-执行图流程，选题ID: 未指定
-小哨采集完成: 5条热帖
-小编策划完成: 2条选题
-小文生产完成: 2条帖子内容
-小图生产完成: 2套配图方案
-小播生产完成: 2条视频脚本
-小审审查完成: 2条通过
-小发生产完成: 2条分发计划
-小数分析完成: 2条数据回流
-流程完成
-```
-
----
-
-## 🎯 日常使用流程
-
-### 场景1：每日自动运行
-```bash
-# Windows定时任务
-schtasks /create /tn "NewsAI_Daily" /tr "python D:\Code\NewsAI\run.py --once" /sc daily /st 09:00
-```
-
-### 场景2：查看运行日志
-```bash
-# 查看最后100行日志
-tail -n 100 last_run.log
+# 查看最新日志
+cat logs/full_run_*.log
 
 # PowerShell
-cat last_run.log | Select-Object -Last 100
+cat logs\full_run_*.log
 ```
 
-### 场景3：清理数据重新来过
-```bash
-# 删除所有表数据（危险！）
-python scripts/cleanup_base.py
+---
 
+## 6. 单独启动某个 Agent
+
+### 6.1 CLI 方式
+
+```bash
+python run.py --agent trend      # 小哨：信息采集
+python run.py --agent topic      # 小编：选题策划
+python run.py --agent content    # 小文：内容撰写
+python run.py --agent visual     # 小图：视觉设计
+python run.py --agent script     # 小播：脚本撰写
+python run.py --agent review     # 小审：审核
+python run.py --agent edit       # 小改：修改
+python run.py --agent distribute # 小发：分发
+python run.py --agent analyze    # 小数：分析
+```
+
+### 6.2 Python 导入方式（调试用）
+
+```python
+from feishu_adapter.feishu_storage import FeishuStorage
+from core.llm.client import get_llm
+from core.agents.trend_scout import TrendScoutAgent
+
+storage = FeishuStorage()
+llm = get_llm()
+agent = TrendScoutAgent(storage, llm)
+result = agent.execute({})
+print(result)
+```
+
+其他 Agent 的类名对照：
+
+| 花名 | 类名 | 模块路径 |
+|------|------|----------|
+| 小哨 | `TrendScoutAgent` | `core.agents.trend_scout` |
+| 小编 | `TopicCuratorAgent` | `core.agents.topic_curator` |
+| 小文 | `ContentWriterAgent` | `core.agents.content_writer` |
+| 小图 | `VisualDesignerAgent` | `core.agents.visual_designer` |
+| 小播 | `ScriptWriterAgent` | `core.agents.script_writer` |
+| 小审 | `ReviewerAgent` | `core.agents.reviewer` |
+| 小改 | `EditorAgent` | `core.agents.editor` |
+| 小发 | `DistributorAgent` | `core.agents.distributor` |
+| 小数 | `AnalystAgent` | `core.agents.analyst` |
+
+### 6.3 带上下文运行
+
+```python
+from feishu_adapter.feishu_storage import FeishuStorage
+from core.llm.client import get_llm
+from core.agents.reviewer import ReviewerAgent
+
+storage = FeishuStorage()
+llm = get_llm()
+agent = ReviewerAgent(storage, llm)
+
+# 传入 topic_id 和 asset_id，Agent 会直接读取对应记录
+result = agent.execute({
+    "topic_id": "TOPIC-20260513-001",
+    "asset_id": "ASSET-20260513-001",
+})
+print(result)
+```
+
+---
+
+## 7. 启动数据 Mock（小数前置脚本）
+
+### 7.1 作用
+
+`scripts/mock_data_demo.py` 是 **小数的前置脚本**，用于：
+
+1. 从 **内容资产库** 读取最新已分发的资产
+2. 用 LLM 生成合理的多平台模拟数据（阅读量/点赞数/播放量等）
+3. 写入 **数据库** 表
+4. 更新选题库的 **数据回流ID**
+
+### 7.2 前置条件
+
+内容资产库中至少有一条资产的 **分发状态** 为 `已生成` 或 `已完成`。
+
+### 7.3 运行
+
+```bash
+# PowerShell
+$env:PYTHONPATH = "."; python scripts/mock_data_demo.py
+```
+
+输出示例：
+
+```
+============================================================
+Mock Data Demo: 生成分发数据到 数据库 表
+============================================================
+选中资产: ASSET-20260513-001
+选题: 实测3款AI代码工具 普通人该选哪个？
+写入数据库: DATA-20260513-001
+更新选题库回流ID: DATA-20260513-001
+============================================================
+完成！DATA ID: DATA-20260513-001
+============================================================
+```
+
+### 7.4 生成的数据字段
+
+| 平台 | 字段 |
+|------|------|
+| 公众号 | 阅读量、点赞数、在看数 |
+| 小红书 | 阅读量、点赞数、收藏数、评论数 |
+| 抖音 | 播放量、点赞数、评论数 |
+| 视频号 | 播放量、点赞数、转发数 |
+| B站 | 播放量、点赞数、投币数 |
+| 综合 | 综合评分(0-1)、爆点验证 |
+
+---
+
+## 8. 运行小数分析
+
+### 8.1 前置条件
+
+数据库表中至少有一条记录的 **数据状态** 为 `待分析` 或 `已分析`。
+
+> 通常先运行 [第7节](#7-启动数据-mock小数前置脚本) 的 mock 脚本生成数据。
+
+### 8.2 CLI 方式
+
+```bash
+python run.py --agent analyze
+```
+
+### 8.3 Python 导入方式
+
+```python
+from feishu_adapter.feishu_storage import FeishuStorage
+from core.llm.client import get_llm
+from core.agents.analyst import AnalystAgent
+
+storage = FeishuStorage()
+llm = get_llm()
+agent = AnalystAgent(storage, llm)
+result = agent.execute({})
+
+print(f"经验文档: {result.get('exp_doc_url')}")
+print(f"数据分析文档: {result.get('analysis_doc_url')}")
+print(f"分析结论: {result.get('analysis')}")
+```
+
+### 8.4 输出
+
+小数会产出 **3 个产物**：
+
+| 产物 | 存储位置 | 说明 |
+|------|----------|------|
+| 经验总结文档 | 飞书云文档 | 可沉淀经验 + 选题策略优化建议 |
+| 数据分析文档 | 飞书云文档 | 各平台数据表格 + 数据与内容关联分析 |
+| 数据库更新 | Bitable 数据库表 | 经验文档链接、数据分析文档链接、数据状态→`已分析` |
+
+### 8.5 分析维度
+
+- **数据与选题关联**：哪些数据印证了选题判断？哪些偏离了预期？
+- **平台差异分析**：为什么某些平台表现好/差？
+- **内容质量归因**：数据表现与文案/配图/视频脚本质量的关联
+- **可沉淀经验**：3-5 条可复用的经验
+- **选题策略优化**：基于数据反馈的下一期建议
+
+---
+
+## 附录：常见问题
+
+### 中文乱码
+
+```bash
+# PowerShell
+chcp 65001
+$env:PYTHONIOENCODING = "utf-8"
+```
+
+### 模块导入错误
+
+```bash
+# 确保在项目根目录，并设置 PYTHONPATH
+cd D:\Code\NewsAI
+$env:PYTHONPATH = "."
+```
+
+### 飞书权限错误 (91403)
+
+1. 登录飞书开放平台
+2. 进入应用管理 → 权限管理
+3. 添加权限：`bitable:record`（读取/写入/更新记录）
+4. 重新获取 app_token
+
+### 清理数据重新来过
+
+```bash
+# 在飞书 Base 中手动删除所有表记录
 # 然后重新初始化
 python bootstrap.py
 ```
 
 ---
 
-## 🆘 紧急救援
-
-如果完全不工作，用最小化测试：
-```bash
-# 测试1：Python环境
-python -c "print('Python OK')"
-
-# 测试2：依赖安装
-python -c "import langgraph; print('LangGraph OK')"
-python -c "from core.utils.feishu_base import FeishuBaseManager; print('FeishuBase OK')"
-
-# 测试3：飞书连接
-python tests/test_lark_hello.py
-
-# 测试4：LLM连接
-python tests/test_doubao_hello.py
-
-# 测试5：单Agent
-python run.py --agent trend
-```
-
----
-
-## 📞 求助信息
-
-如果还是无法运转，收集以下信息：
-1. `python --version`
-2. `pip list` 的输出
-3. `.env` 文件内容（脱敏后）
-4. 运行时的完整错误截图
-5. `last_run.log` 的最后50行
-
-**项目文档**: https://github.com/Vendow-ZQ/NewsAI
-**提交文档**: docs/ByteIntern_Submission.md
+*NewsAI v3.1 使用手册 · 最后更新：2026-05-14*
