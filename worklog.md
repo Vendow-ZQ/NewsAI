@@ -639,5 +639,51 @@ NewsAI/
 
 ---
 
-**最后更新**: 2026-05-13 03:55 SGT  
-**更新者**: Claude（0513分支全流程测试）
+### 2026-05-13 14:00-22:00 (v3.1 全流程修复与字段完善)
+
+| 时间 | 执行人 | 动作 | 内容 | 变动/结果 |
+|------|--------|------|------|-----------|
+| 14:00 | Claude | 诊断 | 分析 0513 分支全流程测试问题 | 定位 5 个核心问题 |
+| 14:30 | Claude | 修复 Bug 1 | production_sync 审改提前启动 | RuntimeError 被自身 try-except 捕获 → 移出检查逻辑，真正阻断 |
+| 15:00 | Claude | 修复 Bug 2 | 小图/小播文档读取失败 | `elements[0].text.content` → `elements[0].text_run.content`，属性名修正 |
+| 15:30 | Claude | 修复 Bug 3 | 文档批量写入 99992402 | batch_size 100 → 50（飞书 API 实际限制） |
+| 16:00 | Claude | 字段完善 | 热帖库补充 `原文链接` | trend_scout.py 添加原文链接写入 |
+| 16:30 | Claude | 字段完善 | 选题库新增 `原文摘要` | topic_curator.py 从关联热帖提取摘要写入 |
+| 17:00 | Claude | 字段完善 | Agent协作日志改进 | 任务类型明确枚举；`执行时间` → `开始时间`+`结束时间` |
+| 17:30 | Claude | 存储层增强 | 自动过滤不存在字段 | feishu_storage.py create/update 自动过滤，避免 FieldNameNotFound |
+| 18:00 | Claude | 小数重构 | 去除 mock json 读取 | analyst.py 从数据库表读真实数据，生成经验+分析文档 |
+| 18:30 | Claude | 新增脚本 | 创建 mock_data_demo.py | 独立演示脚本，用 LLM 生成模拟数据写入数据库 |
+| 19:00 | Claude | 端到端验证 | 运行 e2e_verify_v2.py | 12.1min 全部通过 ✅ |
+| 20:00 | Claude | 文档更新 | 更新 README.md | 拓扑图 v3.1、8张表、最近更新 |
+| 21:00 | Claude | Git 提交 | 提交到 0513 分支 | commit 94033a4，11 files, +965/-269 |
+
+**修复详情汇总：**
+
+| 问题 | 根因 | 修复文件 | 修复方式 |
+|------|------|----------|----------|
+| 审改提前启动 | RuntimeError 被自身 try-except 捕获 | `core/graph/nodes.py` | 检查逻辑移出 try-except |
+| 文档读取为空 | TextElement 无 `.text` 属性 | `feishu_adapter/docs/feishu_doc_storage.py` | 改为 `.text_run.content` |
+| 批量写入失败 | batch_size=100 超 API 限制 | `feishu_adapter/docs/feishu_doc_storage.py` | batch_size=50 |
+| 原文链接缺失 | _write_storage 未写该字段 | `core/agents/trend_scout.py` | 添加原文链接写入 |
+| 原文摘要缺失 | 选题库无该字段 | `feishu_adapter/base/tables.py` + `core/agents/topic_curator.py` | 新增字段+从热帖提取 |
+| 任务类型模糊 | 枚举值不够明确 | `core/agents/base.py` | 爬取热点/选题/写作/写Prompt/写脚本/审查/修改/分发/数据分析 |
+| 小数读 mock | 直接读 analytics_mock.json | `core/agents/analyst.py` | 从数据库表读真实数据 |
+
+**新增文件：**
+- `scripts/mock_data_demo.py` - 演示脚本（非 MultiAgent 系统）
+- `scripts/verification/e2e_verify.py` - v3.0 验证脚本
+- `scripts/verification/e2e_verify_v2.py` - v3.1 验证脚本（ainvoke 方式）
+
+**验证结果：**
+- 热帖库: 84 → 100 (delta 16) ✅
+- 选题库: 12 → 15 (delta 3) ✅
+- 内容资产库: 1 → 2 (delta 1) ✅
+- Agent协作日志: 27 → 36 (delta 9) ✅
+- 文案/配图/视频状态: 均"已完成" ✅
+- 审改状态: 3轮后强制通过 ✅
+- 分发状态: 已发布 ✅
+
+---
+
+**最后更新**: 2026-05-13 22:00 SGT  
+**更新者**: Claude（v3.1 全流程修复与字段完善）

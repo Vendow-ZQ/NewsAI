@@ -43,20 +43,25 @@
     └── 独立复盘组 · 小数 Analyst    (EMP-009) · 数据分析师
 ```
 
-### 2. LangGraph 状态机编排
+### 2. LangGraph 状态机编排（v3.1）
 
 ```
-小哨(采集) → 小编(策划) → [并行] 小文(长文) + 小图(配图) + 小播(脚本)
-                                              ↓
-                        小审(审查) ←→ 小改(修改)  [最多3轮审改循环]
-                                              ↓
-                        小发(分发) → 小数(分析) → END
+小哨(采集) → 小编(策划) → 小文(长文源稿)
+                                     ↓
+                         [并行] 小图(配图) + 小播(脚本)
+                                     ↓
+                         production_sync（3状态全完成才放行）
+                                     ↓
+                         小审(审查) ←→ 小改(修改)  [最多3轮审改循环]
+                                     ↓
+                         小发(分发) → 小数(分析) → END
 ```
 
-**关键设计**：
-- **Fan-out/Fan-in**：生产组3人并行，提升效率
-- **审改循环**：小审-小改最多3轮，确保质量
-- **状态驱动**：Bitable 表状态流转，而非内存状态
+**v3.1 关键改进**：
+- **串行+翻译模式**：小编 → 小文（先写长文源稿），小文完成后 fan-out 到小图+小播
+- **production_sync 阻断**：3个生产状态全为"已完成"才进入审改，防止审改提前启动
+- **审改循环**：小审-小改最多3轮，第3轮强制通过
+- **状态驱动**：Bitable 表状态流转，全程可追溯
 
 ### 3. Bitable-Centric 混合架构（v3.0）
 
@@ -86,7 +91,7 @@
 - Agent System Prompt：`core/agents/{agent}.py` 中的 `SYSTEM_PROMPT`
 - KOC人设模块：`core/prompts/shared/koc_persona.py`
 - 中文爆款基因库：`core/prompts/shared/chinese_hooks.py`
-- 完整Prompt参考：`docs/Final_Prompts.md`（2556行工程文档）
+- 完整Prompt参考：`docs/AGENT_PROMPTS_MASTER.md`（2556行工程文档）
 
 ---
 
@@ -185,12 +190,17 @@ NewsAI/
 │       ├── tables.py         # 7张表Schema+种子数据
 │       └── id_mapping.py     # 业务ID↔record_id映射
 │
-├── 归档目录（已整理）
-│   ├── scripts/archive/      # 旧版运行脚本归档
-│   ├── tests/                # 测试文件
-│   ├── reports/              # 测试报告（e2e_report_*.json）
-│   ├── logs/                 # 运行日志
-│   └── data/                 # 数据文件（.id_mapping.json）
+├── scripts/
+│   ├── archive/              # 旧版运行脚本归档
+│   ├── verification/         # 端到端验证脚本
+│   │   ├── e2e_verify_v2.py  # v3.1 完整流程验证
+│   │   └── e2e_verify.py     # v3.0 验证脚本
+│   └── mock_data_demo.py     # 数据库 mock 数据生成（演示用）
+│
+├── tests/                    # 测试文件
+├── reports/                  # 测试报告（e2e_report_*.json）
+├── logs/                     # 运行日志
+└── data/                     # 数据文件（.id_mapping.json）
 │
 └── 文档 (docs/)
     ├── Final_Prompts.md           # 完整Prompt工程文档 ⭐
@@ -292,17 +302,18 @@ NewsAI/
 
 ---
 
-## 7 张 Bitable 表
+## 8 张 Bitable 表
 
 | 表名 | 用途 | 记录数 |
 |------|------|--------|
 | **信源配置** | 7个信息源的配置 | 8条（种子） |
-| **热帖库** | 小哨采集的原始内容 | 21条/轮 |
-| **选题库** | 小编筛选后的选题方案 | 3条/轮 |
-| **内容资产库** | 小文/小图/小播的生产产物 | 1条/选题 |
-| **数据库** | 小数的数据分析结果 | 1条/选题 |
+| **热帖库** | 小哨采集的原始内容（含原文链接、原文摘要） | 21条/轮 |
+| **选题库** | 小编筛选后的选题方案（含原文摘要、数据回流ID） | 3条/轮 |
+| **内容资产库** | 生产流水线+所有文档链接（文案/配图/视频/审改/分发） | 1条/选题 |
+| **数据库** | 小数的数据分析结果（经验文档+分析文档链接） | 1条/选题 |
 | **KOC人设** | 虚拟KOC的人设设定 | 1条（种子） |
-| **Agent协作日志** | 9个Agent的执行轨迹 | 10+条/轮 |
+| **Agent花名册** | 9个Agent的档案 | 9条（种子） |
+| **Agent协作日志** | 执行轨迹（开始时间/结束时间/耗时秒数） | 10+条/轮 |
 
 ---
 
@@ -310,12 +321,13 @@ NewsAI/
 
 | 文档 | 说明 | 优先级 |
 |------|------|--------|
-| [docs/Final_Prompts.md](docs/Final_Prompts.md) | 所有Agent的完整System Prompt（2556行工程文档） | ⭐⭐⭐⭐⭐ |
-| [docs/Agent_roster_v2.md](docs/Agent_roster_v2.md) | 9位虚拟员工档案+组织架构 | ⭐⭐⭐⭐⭐ |
-| [docs/Documents_design_v2.md](docs/Documents_design_v2.md) | 4类内容产物设计（Bitable-only架构） | ⭐⭐⭐⭐⭐ |
-| [docs/NewsAI_project_v2.md](docs/NewsAI_project_v2.md) | 项目概述+商业模式+核心差异化 | ⭐⭐⭐⭐⭐ |
-| [docs/Tables_schema_v2.md](docs/Tables_schema_v2.md) | 7张表的字段定义+样例数据 | ⭐⭐⭐⭐ |
-| [docs/KOC_persona.md](docs/KOC_persona.md) | KOC「学AI的刘同学」人设 | ⭐⭐⭐⭐ |
+| [docs/AGENT_PROMPTS_MASTER.md](docs/AGENT_PROMPTS_MASTER.md) | 所有Agent的完整System Prompt（2556行工程文档） | ⭐⭐⭐⭐⭐ |
+| [docs/AGENT_ROSTER.md](docs/AGENT_ROSTER.md) | 9位虚拟员工档案+组织架构 | ⭐⭐⭐⭐⭐ |
+| [docs/CONTENT_DESIGN.md](docs/CONTENT_DESIGN.md) | 4类内容产物设计（Bitable+云文档混合架构） | ⭐⭐⭐⭐⭐ |
+| [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) | 项目概述+商业模式+核心差异化 | ⭐⭐⭐⭐⭐ |
+| [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md) | 8张表的字段定义+样例数据 | ⭐⭐⭐⭐ |
+| [docs/KOC_PERSONA.md](docs/KOC_PERSONA.md) | KOC「学AI的刘同学」人设 | ⭐⭐⭐⭐ |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 系统架构、数据流、设计模式详解 | ⭐⭐⭐⭐ |
 | [worklog.md](worklog.md) | 完整开发日志（2026-05-03至今） | ⭐⭐⭐ |
 | [QUICKSTART.md](QUICKSTART.md) | 快速开始指南 | ⭐⭐⭐ |
 
@@ -334,6 +346,15 @@ NewsAI/
 ---
 
 ## 最近更新
+
+### 2026-05-13 v3.1 全流程修复与字段完善
+
+- 🔧 **production_sync 阻断修复**：RuntimeError 被自身 try-except 捕获导致审改提前启动 → 将检查逻辑移出 try-except，真正阻断未完成的流程
+- 🔧 **文档读取修复**：`elements[0].text.content` → `elements[0].text_run.content`，修正 block 属性名和 block_type 常量
+- 🔧 **批量写入修复**：飞书 API 单次 block 上限为 50（非 100），`batch_size` 修正
+- 📋 **数据字段完善**：热帖库补充 `原文链接`、选题库新增 `原文摘要`、Agent协作日志任务类型明确枚举
+- 📊 **小数重构**：从数据库表读取真实数据，生成经验文档 + 数据分析文档
+- 🧪 **端到端验证**：新增 `scripts/verification/e2e_verify_v2.py`，12min 全链路跑通
 
 ### 2026-05-12 文件夹结构整理
 
