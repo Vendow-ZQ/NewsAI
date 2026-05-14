@@ -269,16 +269,15 @@ class FeishuDocStorage(DocStorage):
             token_data = json.loads(token_resp.raw.content)
             tenant_token = token_data.get("tenant_access_token")
 
-            url = f"https://open.feishu.cn/open-apis/drive/v1/permissions/{doc_id}/public"
+            url = f"https://open.feishu.cn/open-apis/drive/v1/permissions/{doc_id}/public?type=docx"
             headers = {
                 "Authorization": f"Bearer {tenant_token}",
                 "Content-Type": "application/json",
             }
 
-            # type is required
             if share_type == "anyone_readable":
                 data = {
-                    "type": "public",
+                    "external_access_entity": "open",
                     "security_entity": "anyone_can_view",
                     "comment_entity": "anyone_can_view",
                     "share_entity": "anyone",
@@ -286,7 +285,7 @@ class FeishuDocStorage(DocStorage):
                 }
             else:  # tenant_readable
                 data = {
-                    "type": "public",
+                    "external_access_entity": "open",
                     "security_entity": "only_full_access",
                     "comment_entity": "only_full_access",
                     "share_entity": "same_tenant",

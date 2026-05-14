@@ -23,7 +23,6 @@ from core.graph.nodes import (
     create_reviewer_node,
     create_editor_node,
     create_distributor_node,
-    create_analyst_node,
 )
 from core.graph.edges import should_continue_review
 
@@ -50,7 +49,6 @@ def build_newsai_graph(storage: Any, llm: Any):
     workflow.add_node("小审", create_reviewer_node(storage, llm))
     workflow.add_node("小改", create_editor_node(storage, llm))
     workflow.add_node("小发", create_distributor_node(storage, llm))
-    workflow.add_node("小数", create_analyst_node(storage, llm))
 
     # 设置入口
     workflow.set_entry_point("小哨")
@@ -80,10 +78,7 @@ def build_newsai_graph(storage: Any, llm: Any):
     )
     workflow.add_edge("小改", "小审")
 
-    # 小发 → 小数（复盘）
-    workflow.add_edge("小发", "小数")
-
-    # 结束
-    workflow.add_edge("小数", END)
+    # 小发 后直接结束（小数拆分为独立流程）
+    workflow.add_edge("小发", END)
 
     return workflow.compile()

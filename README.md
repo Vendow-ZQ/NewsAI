@@ -12,7 +12,7 @@
 
 ## 一句话介绍
 
-**9 个 AI Agent 组成虚拟新闻编辑部**，自动完成信息采集 → 选题策划 → 内容生产（图文视频并行）→ 审核修改（最多3轮循环）→ 多平台分发 → 数据分析的全流程，所有产物存储在飞书多维表格，全程可追溯、可接管、可学习。
+**9 个 AI Agent 组成虚拟新闻编辑部**，自动完成信息采集 → 选题策划 → 内容生产（图文视频并行）→ 审核修改（最多3轮循环）→ 多平台分发的全流程，所有产物存储在飞书多维表格，全程可追溯、可接管、可学习。小数（数据复盘）可独立运行，通常在分发次日执行。
 
 ---
 
@@ -54,13 +54,14 @@
                                      ↓
                          小审(审查) ←→ 小改(修改)  [最多3轮审改循环]
                                      ↓
-                         小发(分发) → 小数(分析) → END
+                         小发(分发) → END
 ```
 
 **v3.1 关键改进**：
 - **串行+翻译模式**：小编 → 小文（先写长文源稿），小文完成后 fan-out 到小图+小播
 - **production_sync 阻断**：3个生产状态全为"已完成"才进入审改，防止审改提前启动
 - **审改循环**：小审-小改最多3轮，第3轮强制通过
+- **小数拆分**：数据分析（小数）从主流程拆分为独立脚本 `scripts/run_analyst.py`，分发次日运行
 - **状态驱动**：Bitable 表状态流转，全程可追溯
 
 ### 3. Bitable-Centric 混合架构（v3.0）
@@ -148,8 +149,12 @@ python run.py --agent edit       # 小改
 python run.py --agent distribute # 小发
 python run.py --agent analyze    # 小数
 
-# 生成Mock数据（小数前置脚本）
-python scripts/mock_data_demo.py
+# 小数复盘流程（独立运行，通常在分发次日执行）
+python scripts/run_analyst.py
+
+# 或分步运行：
+# python scripts/mock_data_demo.py  # Step 1: 生成/收集数据
+# python run.py --agent analyze     # Step 2: 启动小数分析
 ```
 
 ---
@@ -200,7 +205,8 @@ NewsAI/
 │   │   └── e2e_verify.py     # v3.0 验证脚本
 │   ├── check_base_status.py  # Base状态诊断
 │   ├── show_prompts.py       # 查看所有Agent Prompt
-│   └── mock_data_demo.py     # 数据库 mock 数据生成（小数前置脚本）
+│   ├── mock_data_demo.py     # 数据库 mock 数据生成（小数前置脚本）
+│   └── run_analyst.py        # 小数复盘一键脚本（mock_data + analyze）
 │
 ├── tests/                    # 测试文件
 ├── reports/                  # 测试报告（e2e_report_*.json）
@@ -294,10 +300,26 @@ NewsAI/
 - 创建 5 个飞书分发文档
 - 更新 TOPIC.选题状态="已发布"
 
-### Step 6: 数据分析（小数）
+### Step 6: 数据分析（小数）—— 独立运行
 
-**前置**：先运行 `python scripts/mock_data_demo.py` 生成模拟数据到数据库表。
+小数已从主流程拆分，通常在内容分发次日执行。
 
+**一键运行**：
+```bash
+python scripts/run_analyst.py
+```
+该脚本先运行 `mock_data_demo.py` 生成/收集数据，再启动 小数 Agent 做复盘。
+
+**分步运行**：
+```bash
+# Step 1: 生成/收集数据
+python scripts/mock_data_demo.py
+
+# Step 2: 启动 小数 分析
+python run.py --agent analyze
+```
+
+**分析内容**：
 - 读取 **数据库** 表中最新记录（数据状态="待分析"）
 - 读取关联选题、资产、分发文档摘要
 - LLM 深度分析：
@@ -357,6 +379,12 @@ NewsAI/
 ---
 
 ## 最近更新
+
+### 2026-05-14 v3.1 修复：小数拆分 + set_permissions 修复
+
+- 🔀 **小数从主流程拆分**：主流程在小发写入协作日志后结束，小数改为独立脚本 `scripts/run_analyst.py`（先 mock_data + 后 analyze），适配"数据收集在次日"的真实业务场景
+- 🔧 **set_permissions 修复**：移除 JSON body 中的非法字段 `"type": "public"`，改为 URL query parameter `?type=docx`，解决所有 Agent 文档权限设置报 `field validation failed` 的问题
+- 🔧 **storage.update 失败可见**：当 `update_record` 返回 False 时打印 `[警告] 更新记录失败` 日志，避免静默失败
 
 ### 2026-05-13 v3.1 全流程修复与字段完善
 

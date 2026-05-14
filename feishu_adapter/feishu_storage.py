@@ -179,7 +179,10 @@ class FeishuStorage(Storage):
             pass
 
         try:
-            return self.base.update_record(table_id, feishu_record_id, fields)
+            success = self.base.update_record(table_id, feishu_record_id, fields)
+            if not success:
+                print(f"[警告] 更新记录失败: table={table}, record_id={record_id}, fields={list(fields.keys())}")
+            return success
         except Exception as e:
             raise StorageError(f"更新记录失败: {e}")
 

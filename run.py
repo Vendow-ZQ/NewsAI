@@ -71,6 +71,7 @@ async def run_agent(agent_name: str):
             "script": ("core.agents.script_writer", "ScriptWriterAgent"),
             "review": ("core.agents.reviewer", "ReviewerAgent"),
             "distribute": ("core.agents.distributor", "DistributorAgent"),
+            "analyze": ("core.agents.analyst", "AnalystAgent"),
         }
 
         if agent_name not in agent_map:
